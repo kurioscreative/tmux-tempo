@@ -60,7 +60,11 @@ module Tempo
     def fingerprint_body
       lines = ["tempo-fingerprint 1"]
       lines << "path #{@env.plugin_path}"
-      lines << "tpm_plugins #{@env.tpm_plugins_option}".rstrip
+      # Bare "tpm_plugins" when empty; otherwise the value byte-for-byte —
+      # the sh reader compares without stripping, so stripping here would
+      # read as permanently stale for values with trailing whitespace.
+      value = @env.tpm_plugins_option
+      lines << (value.empty? ? "tpm_plugins" : "tpm_plugins #{value}")
       @env.scan.entries.each do |e|
         lines << (e.exists ? "f #{e.mtime} #{e.size} #{e.path}" : "m #{e.path}")
       end
