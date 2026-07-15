@@ -91,8 +91,16 @@ module Tempo
       File.join(data_dir, "fingerprint")
     end
 
+    # The lockfile belongs next to the *real* config file: dotfiles setups
+    # symlink ~/.tmux.conf into a repo, and that repo is where the lock
+    # should be committed. A missing conf (fresh machine) keeps the logical
+    # path — there is nothing to resolve yet.
     def lockfile_path
-      @overrides[:lockfile_path] || File.join(File.dirname(user_conf), "tempo.lock")
+      @overrides[:lockfile_path] || begin
+        conf = user_conf
+        conf = File.realpath(conf) if File.exist?(conf)
+        File.join(File.dirname(conf), "tempo.lock")
+      end
     end
 
     private

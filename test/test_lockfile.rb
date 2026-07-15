@@ -92,4 +92,24 @@ class TestLockfile < Minitest::Test
     File.write(File.join(@dir, "tempo.lock"), "not json{")
     assert_equal({}, Tempo::Lockfile.read(File.join(@dir, "tempo.lock")))
   end
+
+  # Dotfiles case: ~/.tmux.conf is a symlink into a dotfiles repo — the
+  # lock must land next to the real file, where it can be committed.
+  def test_lockfile_path_resolves_conf_symlink
+    real_dir = File.join(@dir, "dotfiles")
+    FileUtils.mkdir_p(real_dir)
+    File.write(File.join(real_dir, ".tmux.conf"), "")
+    link = File.join(@dir, ".tmux.conf")
+    File.symlink(File.join(real_dir, ".tmux.conf"), link)
+
+    env = Tempo::Env.new(user_conf: link)
+    # realpath both sides: on macOS the tmpdir itself sits behind /tmp -> /private/tmp
+    assert_equal File.join(File.realpath(real_dir), "tempo.lock"), env.lockfile_path
+  end
+
+  def test_lockfile_path_missing_conf_keeps_logical_dir
+    conf = File.join(@dir, "no-such-dir", ".tmux.conf")
+    env = Tempo::Env.new(user_conf: conf)
+    assert_equal File.join(@dir, "no-such-dir", "tempo.lock"), env.lockfile_path
+  end
 end
