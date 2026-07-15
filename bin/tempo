@@ -1,0 +1,18 @@
+#!/bin/sh
+# Unified tempo CLI. Owns the Ruby >= 3.0 version gate (D1): on a missing
+# or old Ruby it prints one clear message and does nothing else — exactly
+# the posture of the original's tmux version gate.
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+. "$ROOT/scripts/helpers.sh"
+
+if ! ruby_gate; then
+	printf 'tempo: %s\n' "$RUBY_GATE_MSG" >&2
+	# Inside a key-binding flow, surface the message in the tmux view too.
+	if [ -n "$TEMPO_TMUX_ECHO" ]; then
+		tmux_echo "tempo: $RUBY_GATE_MSG" 2>/dev/null
+	fi
+	exit 1
+fi
+
+exec ruby "$ROOT/lib/tempo/main.rb" "$@"

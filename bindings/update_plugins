@@ -1,0 +1,17 @@
+#!/bin/sh
+# prefix+U: banner of installed plugins, then the `plugin update:` prompt.
+# Empty input cancels silently; input goes through the same word-splitting
+# path as the CLI. The send-keys C-c into the active pane is shipped
+# original behavior, preserved deliberately (INTERFACE.md §1.4 SHOULD).
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+. "$ROOT/scripts/helpers.sh"
+
+reload_tmux_environment
+# No stdout redirect: the echoed banner reaches the tmux output view via
+# this job's captured stdout (the original's display list is unredirected
+# for the same reason).
+TEMPO_TMUX_ECHO=1 "$ROOT/bin/tempo" update-list --tmux-echo 2>/dev/null
+
+tmux command-prompt -p 'plugin update:' " \
+	send-keys C-c; \
+	run-shell '$ROOT/scripts/update_plugin_prompt_handler.sh %1'"

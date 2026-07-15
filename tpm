@@ -1,0 +1,45 @@
+#!/bin/sh
+# tempo — argument-less entry point, drop-in for the original tpm:
+#
+#   run '~/.tmux/plugins/tpm/tpm'
+#
+# Does exactly four cheap things: gate on tmux >= 1.9, publish
+# TMUX_PLUGIN_MANAGER_PATH (only-if-unset), install the key bindings, and
+# hand off to the Ruby-free hot path (scripts/source_plugins.sh).
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+. "$ROOT/scripts/helpers.sh"
+
+SUPPORTED_TMUX_VERSION="1.9"
+
+# On an unsupported tmux: the exact original message for 5s, then nothing
+# else — no env var, no bindings, no sourcing.
+if ! tmux_version_supported; then
+	display_message "Error, Tmux version unsupported! Please install Tmux version $SUPPORTED_TMUX_VERSION or greater!"
+	exit 0
+fi
+
+# Only-if-unset so a user override wins and round-trips unmodified.
+if ! tmux show-environment -g TMUX_PLUGIN_MANAGER_PATH >/dev/null 2>&1; then
+	tmux set-environment -g TMUX_PLUGIN_MANAGER_PATH "$(default_plugin_path)"
+fi
+
+get_tmux_option() {
+	_value="$(tmux show-option -gqv "$1")"
+	if [ -n "$_value" ]; then
+		printf '%s\n' "$_value"
+	else
+		printf '%s\n' "$2"
+	fi
+}
+
+tmux bind-key "$(get_tmux_option "@tpm-install" "I")" run-shell "$ROOT/bindings/install_plugins"
+tmux bind-key "$(get_tmux_option "@tpm-update" "U")" run-shell "$ROOT/bindings/update_plugins"
+tmux bind-key "$(get_tmux_option "@tpm-clean" "M-u")" run-shell "$ROOT/bindings/clean_plugins"
+
+# Plugins run last, after the user's config. Stdout is discarded like the
+# original; stderr is kept so the non-executable-file warning is visible
+# (intentional divergence 4).
+"$ROOT/scripts/source_plugins.sh" >/dev/null
+
+exit 0

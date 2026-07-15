@@ -1,0 +1,14 @@
+#!/bin/sh
+# Command-line update. No args → usage + exit 1, wording per the original.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PROGRAM_NAME="$0"
+
+if [ $# -eq 0 ]; then
+	echo "usage:"
+	echo "  $PROGRAM_NAME all                   update all plugins"
+	echo "  $PROGRAM_NAME tmux-foo              update plugin 'tmux-foo'"
+	echo "  $PROGRAM_NAME tmux-bar tmux-baz     update multiple plugins"
+	exit 1
+fi
+
+exec "$ROOT/bin/tempo" update "$@"

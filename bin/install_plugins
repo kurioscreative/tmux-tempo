@@ -1,0 +1,5 @@
+#!/bin/sh
+# Command-line install at the path the ecosystem hardcodes — the verbatim
+# auto-install snippet from tpm's docs depends on this exact location.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+exec "$ROOT/bin/tempo" install "$@"

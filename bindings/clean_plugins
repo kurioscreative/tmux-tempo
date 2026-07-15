@@ -1,0 +1,9 @@
+#!/bin/sh
+# prefix+M-u. Same shape as the install binding.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+. "$ROOT/scripts/helpers.sh"
+
+reload_tmux_environment
+TEMPO_TMUX_ECHO=1 "$ROOT/bin/tempo" clean --tmux-echo >/dev/null 2>&1
+reload_tmux_environment
+end_message

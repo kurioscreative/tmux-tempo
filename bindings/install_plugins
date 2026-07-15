@@ -1,0 +1,11 @@
+#!/bin/sh
+# prefix+I. Output flows through `tmux run-shell echo` (the temporary-pane
+# UX); the double environment reload is shipped original behavior, and the
+# second one is what activates freshly installed plugins live.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+. "$ROOT/scripts/helpers.sh"
+
+reload_tmux_environment
+TEMPO_TMUX_ECHO=1 "$ROOT/bin/tempo" install --tmux-echo >/dev/null 2>&1
+reload_tmux_environment
+end_message

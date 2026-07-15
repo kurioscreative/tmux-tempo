@@ -1,0 +1,4 @@
+#!/bin/sh
+# Command-line clean at the path the ecosystem hardcodes.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+exec "$ROOT/bin/tempo" clean "$@"
