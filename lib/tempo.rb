@@ -8,6 +8,7 @@ require "tempo/git"
 require "tempo/ui"
 require "tempo/generator"
 require "tempo/lockfile"
+require "tempo/doctor"
 require "tempo/commands"
 require "tempo/cli"
 

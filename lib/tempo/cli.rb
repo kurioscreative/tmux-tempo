@@ -15,6 +15,7 @@ module Tempo
         restore                 check out lockfile commits (detached HEAD)
         generate [--force]      regenerate the loader artifact
         status                  declared plugins and lock state
+        doctor                  check requirements, paths and artifact health
 
       options: --tmux-echo   deliver output through `tmux run-shell echo`
     TEXT
@@ -36,6 +37,7 @@ module Tempo
       when "restore" then Commands.restore(env, ui)
       when "status" then Commands.status(env, ui)
       when "update-list" then Commands.update_list(env, ui)
+      when "doctor" then Doctor.run(env, ui)
       else
         $stderr.puts(USAGE)
         1
