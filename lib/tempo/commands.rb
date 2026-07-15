@@ -14,11 +14,28 @@ module Tempo
         tempo update tmux-bar tmux-baz     update multiple plugins
     TEXT
 
+    # First-run guidance; only ever shown by `install` when the config
+    # declares nothing (the compat contract never exercises that case, so
+    # this stays additive to the INTERFACE.md §1.2 output API).
+    ZERO_PLUGIN_GUIDANCE = <<~TEXT
+      No plugins declared.
+
+      Declare plugins in your tmux config with:
+
+        set -g @plugin 'tmux-plugins/tmux-sensible'
+
+      then run this again, or press prefix + I inside tmux.
+    TEXT
+
     module_function
 
     def install(env, ui)
       prepare_path(env, ui, verify_writable: true)
-      install_missing(env, ui)
+      if env.specs.empty?
+        ui.ok(ZERO_PLUGIN_GUIDANCE)
+      else
+        install_missing(env, ui)
+      end
       finalize(env)
       ui.exit_code
     end

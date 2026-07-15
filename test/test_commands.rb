@@ -113,6 +113,19 @@ class TestCommands < Minitest::Test
     assert_includes err.string, %("tmux-blocked" clean fail)
   end
 
+  def test_install_with_no_declared_plugins_prints_guidance
+    ui, out, = capture_ui
+    assert_equal 0, Tempo::Commands.install(env_for, ui)
+    assert_includes out.string, "No plugins declared"
+    assert_includes out.string, "@plugin"
+  end
+
+  def test_install_with_declared_plugin_omits_guidance
+    ui, out, = capture_ui
+    assert_equal 0, Tempo::Commands.install(env_for(@repo), ui)
+    refute_includes out.string, "No plugins declared"
+  end
+
   def test_mutating_commands_regenerate_artifact_and_lock
     env = env_for(@repo)
     Tempo::Commands.install(env, capture_ui.first)
