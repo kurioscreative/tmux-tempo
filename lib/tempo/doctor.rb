@@ -27,6 +27,7 @@ module Tempo
       report_plugins
       report_artifact
       report_lockfile
+      report_index
       @ui.exit_code
     end
 
@@ -124,6 +125,28 @@ module Tempo
           "not yet written (created on first install)"
         end
       @ui.ok("lockfile:    #{path} — #{state}")
+    end
+
+    # Purely informational, and never a fetch: doctor must stay offline, so
+    # it reports the age of whatever `search` last cached and nothing more.
+    def report_index
+      path = @env.index_cache_path
+      state =
+        if !File.file?(path)
+          "not yet fetched (populated by: tempo search <query>)"
+        else
+          age = Time.now - File.mtime(path)
+          fresh = age < Search::CACHE_TTL ? "fresh" : "stale (refetched on next search)"
+          "cached #{humanize(age)} ago — #{fresh}"
+        end
+      @ui.ok("index:       #{path} — #{state}")
+    end
+
+    def humanize(seconds)
+      return "#{(seconds / 60).round} min" if seconds < 3600
+      return "#{(seconds / 3600).round} h" if seconds < 86_400
+
+      "#{(seconds / 86_400).round} d"
     end
   end
 end
