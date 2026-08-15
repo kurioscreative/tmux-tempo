@@ -158,10 +158,33 @@ The same operations — and the new ones — are available from a shell:
   restore      put every plugin back on its locked commit
                (--frozen: as above, without installing or cleaning)
   rollback     undo the last operation (rollback N: go to generation N)
+  search       find plugins in the curated index
   status       declared plugins, lock state and generation history
   generate     regenerate the loader artifact
   doctor       check requirements, paths and artifact health
 ```
+
+### Finding plugins
+
+```
+$ tempo search clipboard
+tmux-yank — Copy to the system clipboard from copy mode and the command prompt
+  set -g @plugin 'tmux-plugins/tmux-yank'
+```
+
+The second line is exactly what goes in your config — copy it in, then
+`prefix + I`. Search matches names, descriptions and tags, case-insensitively.
+
+The index is a single reviewed JSON file in its own public repo,
+`tmux-tempo-index` — no registry, no service, no account. It is
+fetched the first time you search and cached for a day under
+`~/.local/share/tempo/index.json`. That fetch is the **only** network access
+tempo makes outside `install`/`update` — starting tmux never touches the
+network, and neither does anything else. If the fetch fails, an existing
+cached copy is used and says so; `tempo doctor` shows how old it is.
+
+Nothing about search writes: it will not edit your config or install
+anything.
 
 Uninstalling a **plugin** is the tpm gesture: delete (or comment out) its
 `@plugin` line, then `prefix` + `alt` + `u`.
