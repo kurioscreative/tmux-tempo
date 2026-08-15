@@ -1,9 +1,10 @@
-# How tempo works (Stage 1)
+# How tempo works
 
-A walkthrough of the Stage 1 implementation, written against the code as of
-2026-07-15. The contract itself lives in [`../docs/INTERFACE.md`](../docs/INTERFACE.md)
-and the product decisions in [`../PRD.md`](../PRD.md); this document explains
-how the ~1,700 lines in this directory realize them.
+A walkthrough of the implementation. The tpm compatibility contract this code
+is written against, the product decisions behind it (referenced below as
+D<n>), and the decision and notes logs live in the development monorepo this
+repository is snapshotted from; this document explains how the code here
+realizes them.
 
 The whole thing is split into two planes: a **POSIX-sh hot path** that tmux
 runs on every server start (never touches Ruby), and a **Ruby management
@@ -60,7 +61,7 @@ the bias is "when in doubt, regenerate," because regeneration is cheap and a
 wrong plugin set isn't. The `_stat_mtime_size` helper probes both GNU and BSD
 `stat` dialects and only accepts output shaped like two integers — GNU
 `stat -f` _succeeds_ in filesystem mode with garbage output, which silently
-killed the hot path in an earlier iteration (see `../NOTES.md`).
+killed the hot path in an earlier iteration.
 
 ## The management plane (Ruby, stdlib-only)
 
@@ -68,7 +69,7 @@ killed the hot path in an earlier iteration (see `../NOTES.md`).
 clear message, do nothing else), then execs `lib/tempo/main.rb`. The three
 compat bins (`bin/install_plugins`, `bin/update_plugins`, `bin/clean_plugins`)
 are thin wrappers over it at the paths the ecosystem hardcodes. The Ruby side
-is seven small collaborators:
+is a set of small collaborators — the load-bearing ones:
 
 - **`Env`** ([`lib/tempo/env.rb`](lib/tempo/env.rb)) — resolves all machine
   state: plugin path (tmux global env var, `~`/`$HOME` expanded, trailing
@@ -103,6 +104,16 @@ is seven small collaborators:
   the substring quirk) and never deletes the dir literally named `tpm`. Every
   mutating command ends in `finalize`: rewrite the lockfile, regenerate the
   artifact — so the hot path and lock always reflect disk.
+- **`ConfigEdit`** ([`lib/tempo/config_edit.rb`](lib/tempo/config_edit.rb)) —
+  the only code that writes the user's tmux config (D22), behind `tempo add`
+  and `tempo remove`. `add` appends the one canonical `@plugin` serialization;
+  `remove` deletes a declaration only when it can parse the whole line, and
+  otherwise refuses with the exact `file:line` and "remove it by hand" —
+  `@tpm_plugins` membership, `%if` blocks and sourced files are always
+  refusals. It is the deliberate counterweight to the Non-Goals ban on a
+  manifest: the config _is_ the plugin list, so editing it must be
+  conservative enough to never mangle a hand-tuned file. Writes go through a
+  timestamped `.bak-` copy, and through a symlinked conf rather than over it.
 - **`UI`** ([`lib/tempo/ui.rb`](lib/tempo/ui.rb)) — dual-mode output
   (stdout/stderr for CLI, `tmux run-shell "echo …"` for bindings) plus failure
   tracking: any `err` flips the exit code to 1, which is divergence 1 (the
@@ -218,7 +229,7 @@ chain**. `Tmux.display_echo` uses `system` (not `capture2e`), and
 [`bindings/update_plugins`](bindings/update_plugins) deliberately leaves
 stdout unredirected while install/clean redirect it — matching the original's
 exact UX on tmux ≥ 3. The first implementation captured somewhere in that
-chain and all interactive output silently vanished (see `../DECISIONS.md`).
+chain and all interactive output silently vanished.
 
 The `prefix+U` flow: reload environment → echo the installed-plugins banner
 (divergence 3: `#branch`-pinned plugins now appear, because names are
@@ -238,9 +249,15 @@ byte-sort, recursive source scan, normalized `$0`, clean exits, real version
 compare), and the lockfile. The gate:
 
 ```sh
-TPM_UNDER_TEST=../tempo ./compat-tests/run.sh   # 29 tests, one with a divergence note (update exit code)
-ruby -Ilib -Itest test/run_all.rb               # tempo's own suite
+ruby -Ilib -Itest test/run_all.rb   # tempo's own suite, ships here
+sh test/flows/run_flows.sh          # end-to-end flows, ships here
 ```
+
+The third gate — the held-out tpm compatibility suite (29 tests, one carrying
+a divergence note for the update exit code) — runs against this tree from the
+development monorepo, where the suite and the vendored original live. It is
+deliberately not vendored here: a parity suite you can edit alongside the
+implementation has stopped being a held-out test.
 
 ## Known trade-offs
 
@@ -251,7 +268,7 @@ ruby -Ilib -Itest test/run_all.rb               # tempo's own suite
   same-size edit is theoretically invisible; any management op (or
   `bin/tempo generate`) forces regeneration.
 - **Stale artifact + no Ruby runs the stale set silently** — a deliberate
-  D1 mitigation, recorded in `../DECISIONS.md`.
+  D1 mitigation.
 - **Store entries are shared and writable** (D24): a plugin that caches
   inside its own directory shares that cache with every config linked to the
   same entry. Read-only entries would break such plugins outright, so
