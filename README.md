@@ -197,6 +197,13 @@ Unrecognized flags are a usage error everywhere (`--frozen` on `install`
 included — installing is a network operation by definition), so a typo
 fails loudly instead of being ignored.
 
+## Security
+
+Installing a tmux plugin means running someone else's code with your
+privileges, and tempo does not sandbox it — the lockfile pins what runs,
+which is a real but limited defense. What that does and does not protect
+against is spelled out in [THREAT-MODEL.md](THREAT-MODEL.md).
+
 ## Troubleshooting
 
 `~/.tmux/plugins/tpm/bin/tempo doctor` prints one line per fact that
