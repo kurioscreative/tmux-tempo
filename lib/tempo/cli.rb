@@ -14,8 +14,9 @@ module Tempo
         clean                   remove undeclared plugin dirs
         sync [--frozen]         install missing + restore locked + clean
         restore [--frozen]      put every plugin back on its locked commit
+        rollback [N]            undo: flip back to the previous generation (or N)
         generate [--force]      regenerate the loader artifact
-        status                  declared plugins and lock state
+        status                  declared plugins, lock state and generations
         doctor                  check requirements, paths and artifact health
         update-list             internal: plugin list behind the prefix+U prompt
 
@@ -56,6 +57,7 @@ module Tempo
       when "generate" then Commands.generate(env)
       when "sync" then Commands.sync(env, ui, frozen: frozen)
       when "restore" then Commands.restore(env, ui, frozen: frozen)
+      when "rollback" then Commands.rollback(env, ui, args)
       when "status" then Commands.status(env, ui)
       when "update-list" then Commands.update_list(env, ui)
       when "doctor" then Doctor.run(env, ui)

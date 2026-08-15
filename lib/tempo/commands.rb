@@ -37,7 +37,7 @@ module Tempo
       else
         install_missing(env, ui)
       end
-      finalize(env)
+      finalize(env, "install")
       ui.exit_code
     end
 
@@ -53,14 +53,14 @@ module Tempo
       prepare_path(env, ui, verify_writable: false)
       Store.adopt(env, ui)
       update_named(env, ui, names)
-      finalize(env)
+      finalize(env, "update")
       ui.exit_code
     end
 
     def clean(env, ui)
       prepare_path(env, ui, verify_writable: false)
       clean_undeclared(env, ui)
-      finalize(env)
+      finalize(env, "clean")
       ui.exit_code
     end
 
@@ -82,7 +82,7 @@ module Tempo
       install_missing(env, ui)
       restore_locked(env, ui)
       clean_undeclared(env, ui)
-      finalize(env)
+      finalize(env, "sync")
       ui.exit_code
     end
 
@@ -98,7 +98,26 @@ module Tempo
       Store.adopt(env, ui)
       restore_locked(env, ui)
       Generator.new(env).generate
+      # restore and the frozen paths never write the lock, so their generation
+      # snapshots the *enforced* state carrying the lock content they were
+      # handed — which is exactly what rolling back to it should reproduce.
+      Generations.file(env, "restore")
       ui.exit_code
+    end
+
+    # The undo for a bad `prefix + U`. Bare = the generation below the current
+    # one; `rollback <N>` targets one by number. It rewrites the lockfile (that
+    # IS the point — the dotfiles diff shows the revert) but never touches
+    # tmux.conf.
+    def rollback(env, ui, args)
+      target = args.find { |a| a.match?(/\A\d+\z/) }
+      number = target ? target.to_i : Generations.previous(env)
+      unless number
+        ui.err("no earlier generation to roll back to")
+        return 1
+      end
+
+      Generations.rollback(env, ui, number)
     end
 
     def status(env, ui)
@@ -113,7 +132,25 @@ module Tempo
         seen[spec.name] = true
         ui.ok("  #{spec.name}: #{status_line(env, lock, spec)}")
       end
+      show_generations(env, ui)
       0
+    end
+
+    # Generation history, newest first, `*` marking the one the plugin path is
+    # standing on. Silent when there is none — a box that has never run a
+    # mutating op has nothing to say here.
+    def show_generations(env, ui)
+      known = Generations.numbers(env)
+      return if known.empty?
+
+      here = Generations.current(env)
+      ui.ok("")
+      ui.ok("generations (newest first, keeping #{Generations::KEEP}):")
+      known.reverse_each do |n|
+        man = Generations.manifest(env, n) || {}
+        ui.ok(format("  %s %-4d %s  %-8s %d plugin(s)",
+                     n == here ? "*" : " ", n, man["time"], man["op"], man.fetch("links", {}).size))
+      end
     end
 
     # The prefix+U banner. Names are branch-stripped before the installed
@@ -260,6 +297,7 @@ module Tempo
       restore_locked(env, ui, frozen: true)
       clean_undeclared(env, ui) if clean # local-only, so frozen still runs it
       Generator.new(env).generate # the hot path must reflect enforced disk
+      Generations.file(env, clean ? "sync-frozen" : "restore-frozen")
       ui.exit_code
     end
 
@@ -298,11 +336,14 @@ module Tempo
       "installed at #{commit ? commit[0, 12] : "?"} (#{state})"
     end
 
-    # Every mutating operation rewrites the lock and regenerates the
-    # artifact so the hot path and the lockfile always reflect disk.
-    def finalize(env)
+    # Every mutating operation rewrites the lock, regenerates the artifact and
+    # files a generation — so the hot path and the lockfile always reflect
+    # disk, and the state just replaced stays reachable (D25). The generation
+    # is filed last, because it snapshots the lock bytes this call wrote.
+    def finalize(env, op)
       Lockfile.write(env)
       Generator.new(env).generate
+      Generations.file(env, op)
     end
   end
 end
