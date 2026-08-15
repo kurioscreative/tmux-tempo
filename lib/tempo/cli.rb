@@ -13,7 +13,7 @@ module Tempo
         update all|<name>...    update plugins (parallel)
         clean                   remove undeclared plugin dirs
         sync [--frozen]         install missing + restore locked + clean
-        restore [--frozen]      check out lockfile commits (detached HEAD)
+        restore [--frozen]      put every plugin back on its locked commit
         generate [--force]      regenerate the loader artifact
         status                  declared plugins and lock state
         doctor                  check requirements, paths and artifact health

@@ -107,7 +107,46 @@ is seven small collaborators:
   (stdout/stderr for CLI, `tmux run-shell "echo …"` for bindings) plus failure
   tracking: any `err` flips the exit code to 1, which is divergence 1 (the
   original lost failures in backgrounded subshells and always exited 0).
+- **`Store`** ([`lib/tempo/store.rb`](lib/tempo/store.rb)) — below.
 - **`Lockfile`** ([`lib/tempo/lockfile.rb`](lib/tempo/lockfile.rb)) — below.
+
+## The plugin store (S2.1, D24)
+
+`<plugin-path>/<name>` is a symlink. The clone lives at
+`$XDG_DATA_HOME/tempo/store/<sha256(url)>/<commit>/`, so a plugin is stored
+once per `(url, commit)` no matter how many configs or names want it. The URL
+is never recovered by inverting the digest — it is read back from the entry's
+own `origin` remote, which is also what the lockfile reads through the link.
+
+One invariant carries the design: **tempo never runs a mutating git command
+inside a filed entry.** Concretely:
+
+- **install** clones into a staging dir under the store root, reads the commit
+  the clone actually landed on (unknowable before it lands), renames staging
+  into place — same filesystem, so atomic — and links.
+- **update** local-clones the current entry into staging (git hardlinks the
+  object database, so this is nearly free), points `origin` back at the real
+  upstream, and pulls **there**. That pull's own output is the `   |`
+  indented report the compat contract pins, so the report stays real git
+  output rather than a reconstruction. The result is filed as a _new_ entry
+  and the link flips; a pull landing on an already-filed commit files nothing.
+- **restore** flips to the entry holding the locked commit, and only builds
+  that entry (staging clone + checkout, with the usual fetch retry unless
+  `--frozen`) when it has never been filed.
+
+Every flip is symlink-at-a-temp-name plus `rename`, never unlink-then-link:
+a tmux server starting mid-flip must never find a missing plugin directory.
+The hot path needs no regeneration for a flip, because the artifact bakes
+plugin-path strings and globs `*.tmux` at runtime (see above) — it never
+learns the store exists.
+
+**Adoption** is lazy and clean-only. A real directory left by tpm, an older
+tempo, or a hand-run `git clone` is moved into the store on the first mutating
+op, but only when the work tree is clean (untracked files included — adoption
+_shares_ whatever it moves) and HEAD is contained in a remote-tracking branch.
+Anything else keeps its real directory, warns once, and keeps working: update
+still pulls it in place, restore still checks out in place. The hybrid layout
+is supported indefinitely, not a migration deadline.
 
 ## The lockfile (S1.8, the new capability)
 
@@ -116,10 +155,12 @@ name → `{url, branch, commit}`. The key design choice: it is a
 **snapshot-from-disk** after every mutating op — entries come from
 `git remote get-url` + HEAD of what's actually declared+installed, never from
 remembered install-time state. There is no state to drift.
-`sync` = install missing + check out locked commits + clean undeclared, then
+`sync` = install missing + enforce locked commits + clean undeclared, then
 snapshots the now-enforced state, so it round-trips. `restore` is just the
-checkout-locked part (detached HEAD by design; `update` moves the lock
-forward). Legacy `@tpm_plugins` entries lock identically to `@plugin`
+locked-commits part. What it promises is the commit, not the shape of HEAD:
+flipping onto an entry that was cloned lands on that entry's branch, while an
+entry built by checkout is detached. `update` moves the lock forward. Legacy
+`@tpm_plugins` entries lock identically to `@plugin`
 entries — they are the same after parsing.
 
 ## The interactive UX (the subtle part)
@@ -165,3 +206,11 @@ ruby -Ilib -Itest test/run_all.rb               # tempo's own suite
   `bin/tempo generate`) forces regeneration.
 - **Stale artifact + no Ruby runs the stale set silently** — a deliberate
   D1 mitigation, recorded in `../DECISIONS.md`.
+- **Store entries are shared and writable** (D24): a plugin that caches
+  inside its own directory shares that cache with every config linked to the
+  same entry. Read-only entries would break such plugins outright, so
+  immutability is a rule about git state that tempo obeys, not a permission
+  bit. The escape hatch is the hybrid layout — a plugin kept as a real
+  directory is never shared.
+- **The store only grows.** Superseded entries stay filed; reclaiming them is
+  generations' job (S2.2), not the store's.

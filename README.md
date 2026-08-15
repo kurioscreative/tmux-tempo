@@ -155,7 +155,7 @@ The same operations — and the new ones — are available from a shell:
   clean        remove undeclared plugin dirs
   sync         install missing + restore locked commits + clean
                (--frozen: enforce the lock offline, never write it)
-  restore      check out lockfile commits (detached HEAD)
+  restore      put every plugin back on its locked commit
                (--frozen: as above, without installing or cleaning)
   status       declared plugins and lock state
   generate     regenerate the loader artifact
@@ -164,6 +164,44 @@ The same operations — and the new ones — are available from a shell:
 
 Uninstalling a **plugin** is the tpm gesture: delete (or comment out) its
 `@plugin` line, then `prefix` + `alt` + `u`.
+
+### Where plugins actually live
+
+`~/.tmux/plugins/<name>` is a **symlink**. The clone itself lives once per
+`(url, commit)` under `~/.local/share/tempo/store/` (XDG), and a filed copy
+is never modified again: `update` pulls in a throwaway working copy and files
+the result as a new entry, then flips the link; `restore` flips the link back.
+Nothing in your config changes, and plugins still see the familiar
+`~/.tmux/plugins/<name>/…` path in `$0` — the symlink is not resolved before
+they run.
+
+What you get: two configs (or two machines' worth of dotfiles under one
+`$HOME`) that want the same plugin at the same commit share one clone,
+and rolling back to a locked commit is instant and offline whenever that
+commit was ever installed here.
+
+Two consequences worth knowing:
+
+- **A shared clone is a shared directory.** A plugin that caches state inside
+  its own folder shares that cache with every config pointing at the same
+  entry. If that matters for a plugin you use, keep its directory in the old
+  flat layout (below) — the hybrid layout is supported indefinitely.
+- **Existing plain directories are adopted lazily**, on the first
+  install/update/sync/restore, and only when the directory is a faithful
+  checkout of its remote: no uncommitted or untracked files, and a HEAD some
+  remote branch contains. Anything else keeps its real directory, keeps
+  working exactly as before, and says so once:
+
+  ```
+    "tmux-menus" kept as a plain directory: uncommitted changes
+  ```
+
+  That is a notice, not an error — the command still succeeds. To adopt such
+  a plugin later, commit or discard the local changes and run any mutating
+  command again.
+
+The store only grows for now; reclaiming old entries arrives with
+generations.
 
 ### The lockfile
 
@@ -254,16 +292,22 @@ whatever it happens to be named — the guard resolves real paths, so a
 checkout symlinked in as `tempo`, `tpm`, or anything else is safe from it.
 
 To stop using plugins entirely, also remove the `@plugin` and `run` lines
-from your tmux config and delete `~/.tmux/plugins/` and `tempo.lock`.
+from your tmux config and delete `~/.tmux/plugins/`, `tempo.lock`, and
+`~/.local/share/tempo/` — the last of these holds the generated loader **and
+the plugin store**, so deleting the plugins directory alone leaves the clones
+on disk.
 
 ## How it works
 
 Short version: Ruby is a _compiler_, not a runtime. Management commands
 scan your config once and emit a straight-line `sh` loader plus a
 freshness fingerprint into `~/.local/share/tempo/`; every tmux server
-start just executes that artifact. The full walkthrough — hot path,
-management plane, lockfile semantics, and the intentional divergences from
-tpm (real exit codes, visible non-executable-file warnings) — is in
+start just executes that artifact. Plugins themselves are stored once per
+`(url, commit)` in the same directory and linked into `~/.tmux/plugins/`,
+which is what makes updates and rollbacks link flips. The full walkthrough —
+hot path, management plane, the store, lockfile semantics, and the
+intentional divergences from tpm (real exit codes, visible
+non-executable-file warnings) — is in
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## For maintainers: publishing a snapshot

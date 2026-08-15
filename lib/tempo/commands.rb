@@ -86,8 +86,12 @@ module Tempo
       ui.exit_code
     end
 
-    # restore = the checkout-locked-commits part of sync, alone. Leaves
-    # clones on a detached HEAD by design; `update` moves the lock forward.
+    # restore = the locked-commits part of sync, alone. Under the store this is
+    # a link flip onto the entry holding the locked commit, so the resulting
+    # HEAD is whatever that entry carries — attached when the entry came from a
+    # clone, detached when it had to be built by checkout. What restore
+    # promises is the commit, never the shape of HEAD. `update` moves the lock
+    # forward.
     def restore(env, ui, frozen: false)
       return frozen_enforce(env, ui, clean: false) if frozen
 
