@@ -108,6 +108,8 @@ is seven small collaborators:
   tracking: any `err` flips the exit code to 1, which is divergence 1 (the
   original lost failures in backgrounded subshells and always exited 0).
 - **`Store`** ([`lib/tempo/store.rb`](lib/tempo/store.rb)) — below.
+- **`Generations`** ([`lib/tempo/generations.rb`](lib/tempo/generations.rb)) —
+  below.
 - **`Lockfile`** ([`lib/tempo/lockfile.rb`](lib/tempo/lockfile.rb)) — below.
 
 ## The plugin store (S2.1, D24)
@@ -147,6 +149,50 @@ _shares_ whatever it moves) and HEAD is contained in a remote-tracking branch.
 Anything else keeps its real directory, warns once, and keeps working: update
 still pulls it in place, restore still checks out in place. The hybrid layout
 is supported indefinitely, not a migration deadline.
+
+## Generations and rollback (S2.2, D25)
+
+A generation is the pair that fully describes "which plugins are live": the
+lockfile bytes, and which store entry each declared plugin's symlink pointed
+at. Both live under `<data_dir>/generations/`:
+
+```
+current            the number the plugin path is standing on
+<N>/manifest.json  {version, op, time, links:{name=>entry}, unmanaged:[…]}
+<N>/tempo.lock     a byte copy of the lockfile as it stood
+```
+
+`manifest.json` is written last, so a crash mid-file leaves a directory that
+`Generations.numbers` simply does not count. Every mutating command files one:
+`install`/`update`/`clean`/`sync` through `Commands.finalize` (after the lock
+write — the generation snapshots the bytes that call produced), and
+`restore` plus the two `--frozen` paths directly, since those bypass
+`finalize` and never write the lock. Their generation records the _enforced_
+state carrying whatever lock content they were handed, which is exactly what
+rolling back to it should reproduce.
+
+This is only affordable because of the store: a generation does not copy
+plugins, it records entry paths, so filing one costs a few hundred bytes and
+rolling back costs a `rename` per plugin.
+
+`rollback [N]` — bare means the generation below `current` — flips each link
+with the same temp-symlink-plus-`rename` the store uses, restores the stored
+lock bytes (**not** a re-snapshot of disk: `Lockfile.write` would produce the
+same content today, but restoring stored bytes is the honest semantic and
+immune to future drift), regenerates the artifact, and moves the marker.
+Rolling back files nothing, so a second rollback walks further down instead of
+ping-ponging. Two deliberate non-actions: it never edits `tmux.conf`, so a
+plugin declared after the target generation is _reported_ rather than
+invented; and a plugin kept as a plain directory (adoption declined) is
+recorded `unmanaged` and left alone, because there is no second copy to flip
+to.
+
+Retention is the constant **10** — no flag, no env var, no config. Pruning and
+store GC ride every new generation, which is what finally bounds the store D24
+left growing. GC deletes a store entry only when no kept generation references
+it **and** no live plugin-path symlink resolves into it; the second half
+matters, because the entry you are standing on can be older than the oldest
+kept generation.
 
 ## The lockfile (S1.8, the new capability)
 
@@ -212,5 +258,8 @@ ruby -Ilib -Itest test/run_all.rb               # tempo's own suite
   immutability is a rule about git state that tempo obeys, not a permission
   bit. The escape hatch is the hybrid layout — a plugin kept as a real
   directory is never shared.
-- **The store only grows.** Superseded entries stay filed; reclaiming them is
-  generations' job (S2.2), not the store's.
+- **Reclaiming store entries is generations' job, not the store's.** The store
+  itself never deletes; entries go only when the last generation referencing
+  them is pruned (10 back) and nothing links them. So a box that never runs a
+  mutating op never reclaims — correct, and the same "regeneration is cheap,
+  a wrong state isn't" bias as the fingerprint.

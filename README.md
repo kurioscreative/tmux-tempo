@@ -157,7 +157,8 @@ The same operations — and the new ones — are available from a shell:
                (--frozen: enforce the lock offline, never write it)
   restore      put every plugin back on its locked commit
                (--frozen: as above, without installing or cleaning)
-  status       declared plugins and lock state
+  rollback     undo the last operation (rollback N: go to generation N)
+  status       declared plugins, lock state and generation history
   generate     regenerate the loader artifact
   doctor       check requirements, paths and artifact health
 ```
@@ -200,8 +201,55 @@ Two consequences worth knowing:
   a plugin later, commit or discard the local changes and run any mutating
   command again.
 
-The store only grows for now; reclaiming old entries arrives with
-generations.
+Old entries are reclaimed by generations (below), so the store does not grow
+without bound.
+
+### Generations and rollback
+
+Every operation that changes what is installed — `install`, `update`, `clean`,
+`sync`, `restore`, and the `prefix + I` / `prefix + U` bindings — first files a
+**generation**: the lockfile exactly as it stood, plus which store entry each
+plugin pointed at. Filing one is cheap (a few hundred bytes; the plugins are
+already in the store), so the previous state is always still there.
+
+`prefix + U` broke something?
+
+```
+$ bin/tempo rollback
+  "tmux-yank" rolled back
+rolled back to generation 7
+```
+
+The plugin-path symlinks flip back, `tempo.lock` is rewritten to that
+generation's bytes — that is deliberate: the revert should show up in your
+dotfiles diff — and the next tmux reload runs the old code. Nothing goes over
+the network. `bin/tempo rollback 4` goes to a specific generation instead of
+the previous one, and `bin/tempo status` lists what is available:
+
+```
+generations (newest first, keeping 10):
+    8    2026-08-15T09:41:02Z  update   3 plugin(s)
+  * 7    2026-08-15T09:12:44Z  install  3 plugin(s)
+```
+
+Rolling back does not file a generation of its own — it moves the `*` marker —
+so rolling back twice walks further into the past rather than bouncing between
+two states.
+
+Two things rollback deliberately does not do:
+
+- **It never edits your tmux config.** A plugin you declared after the target
+  generation has nothing to roll back to; rollback names it and moves on
+  (`"tmux-fzf" is declared but not in generation 4; run install or sync`).
+- **It does not touch plugins kept as plain directories** (adoption declined,
+  above) — there is no second copy of those to flip to, so they are reported
+  and left alone.
+
+The last **10** generations are kept. That number is a constant, not a
+setting. When a generation ages out, any store entry that no remaining
+generation references — and that no plugin currently links to — is deleted
+with it. That is what keeps `~/.local/share/tempo/store/` from growing
+forever.
 
 ### The lockfile
 
