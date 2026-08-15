@@ -47,22 +47,26 @@ class TestLockfile < Minitest::Test
                  after.dig("tmux-example-plugin", "commit")
   end
 
-  def test_restore_checks_out_locked_commit_detached
+  # Drift is produced through `update`, never by pulling in the plugin dir:
+  # under the store that dir is a symlink into a filed entry, and mutating an
+  # entry in place is the one thing the design forbids. The lock is then put
+  # back by hand, because the situation being tested is a committed lock that
+  # disk has run ahead of.
+  def test_restore_returns_disk_to_the_locked_commit
     install(env_for(@repo))
-    locked = Tempo::Lockfile.read(File.join(@dir, "tempo.lock"))
-                            .dig("tmux-example-plugin", "commit")
+    lock_path = File.join(@dir, "tempo.lock")
+    locked = Tempo::Lockfile.read(lock_path).dig("tmux-example-plugin", "commit")
+    lock_before = File.read(lock_path)
 
-    # drift: upstream moves and the clone follows, without touching the lock
     add_upstream_commit(@repo)
+    Tempo::Commands.update(env_for(@repo), capture_ui.first, ["all"])
+    File.write(lock_path, lock_before)
     dir = File.join(@plugins, "tmux-example-plugin")
-    git(dir, "pull", "-q")
     refute_equal locked, git(dir, "rev-parse", "HEAD").strip
 
     ui, out, = capture_ui
     assert_equal 0, Tempo::Commands.restore(env_for(@repo), ui)
     assert_equal locked, git(dir, "rev-parse", "HEAD").strip
-    assert_equal "HEAD", git(dir, "rev-parse", "--abbrev-ref", "HEAD").strip,
-                 "restore leaves a detached HEAD by design"
     assert_includes out.string, %("tmux-example-plugin" restored to #{locked[0, 12]})
   end
 

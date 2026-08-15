@@ -86,8 +86,13 @@ class TestFrozen < Minitest::Test
   def test_restores_a_local_commit_without_fetching
     Tempo::Commands.install(env_for(@repo), capture_ui.first)
     locked = JSON.parse(File.read(lockfile_path))["plugins"]["tmux-alpha"]["commit"]
+    lock_before = File.read(lockfile_path)
     add_upstream_commit(@repo)
-    Tempo::Git.pull(plugin_dir("tmux-alpha"))
+    # Drift via `update`, not a pull through the symlink: that would mutate the
+    # filed store entry. Update moves the lock too, so put the lock back — the
+    # case under test is a lock that disk has run ahead of.
+    Tempo::Commands.update(env_for(@repo), capture_ui.first, ["tmux-alpha"])
+    File.write(lockfile_path, lock_before)
     refute_equal locked, Tempo::Git.head_commit(plugin_dir("tmux-alpha"))
     cut_the_network
 

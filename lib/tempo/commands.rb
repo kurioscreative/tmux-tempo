@@ -31,6 +31,7 @@ module Tempo
 
     def install(env, ui)
       prepare_path(env, ui, verify_writable: true)
+      Store.adopt(env, ui)
       if env.specs.empty?
         ui.ok(ZERO_PLUGIN_GUIDANCE)
       else
@@ -50,6 +51,7 @@ module Tempo
       end
 
       prepare_path(env, ui, verify_writable: false)
+      Store.adopt(env, ui)
       update_named(env, ui, names)
       finalize(env)
       ui.exit_code
@@ -76,6 +78,7 @@ module Tempo
       return frozen_enforce(env, ui, clean: true) if frozen
 
       prepare_path(env, ui, verify_writable: true)
+      Store.adopt(env, ui)
       install_missing(env, ui)
       restore_locked(env, ui)
       clean_undeclared(env, ui)
@@ -88,6 +91,7 @@ module Tempo
     def restore(env, ui, frozen: false)
       return frozen_enforce(env, ui, clean: false) if frozen
 
+      Store.adopt(env, ui)
       restore_locked(env, ui)
       Generator.new(env).generate
       ui.exit_code
@@ -140,7 +144,7 @@ module Tempo
           ui.ok(%(Already installed "#{spec.name}"))
         else
           ui.ok(%(Installing "#{spec.name}"))
-          if Git.clone_plugin(spec, env.plugin_path)
+          if Store.install(env, spec)
             ui.ok(%(  "#{spec.name}" download success))
           else
             ui.err(%(  "#{spec.name}" download fail))
@@ -170,7 +174,7 @@ module Tempo
       # Parallel like the original; each plugin's report emits atomically.
       targets.map do |name|
         Thread.new do
-          out, ok = Git.pull(env.plugin_dir(name))
+          out, ok = Store.update(env, name)
           indented = out.split("\n").map { |l| "    | #{l}" }.join("\n")
           if ok
             ui.ok(%(  "#{name}" update success\n#{indented}))
@@ -223,10 +227,12 @@ module Tempo
         dir = env.plugin_dir(spec.name)
         next if Git.head_commit(dir) == entry["commit"]
 
-        ok = Git.checkout(dir, entry["commit"])
-        # The fetch retry is restore's only network touch; frozen drops it,
-        # and preflight has already proven the object is here.
-        ok ||= Git.fetch(dir) && Git.checkout(dir, entry["commit"]) unless frozen
+        # A flip when the locked entry is already filed; otherwise the entry is
+        # built in staging first. The fetch retry inside `place` is restore's
+        # only network touch, and frozen drops it — preflight has already
+        # proven the object is here.
+        url = entry["url"] || Git.remote_url(dir)
+        ok = Store.place(env, spec.name, url, entry["commit"], frozen: frozen)
         if ok
           ui.ok(%(  "#{spec.name}" restored to #{entry["commit"][0, 12]}))
         else
@@ -269,7 +275,7 @@ module Tempo
           out << [spec.name, "not installed"]
         elsif commit.nil?
           out << [spec.name, "not in the lockfile"]
-        elsif !Git.commit_present?(env.plugin_dir(spec.name), commit)
+        elsif !Store.commit_available?(env, spec.name, lock.dig(spec.name, "url"), commit)
           out << [spec.name, "locked commit #{commit[0, 12]} missing locally"]
         end
       end

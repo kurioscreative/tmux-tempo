@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "open3"
+require "fileutils"
 
 module Tempo
   # All git operations. GIT_TERMINAL_PROMPT=0 plus the empty `git::@`
@@ -11,18 +12,37 @@ module Tempo
 
     module_function
 
-    # Verbatim URL first; GitHub shorthand expansion only on failure.
-    def clone_plugin(spec, into)
-      clone(spec.url, spec.branch, into) ||
-        clone(spec.github_shorthand_url, spec.branch, into)
+    # Verbatim URL first; GitHub shorthand expansion only on failure. Both
+    # attempts target the same path — a failed clone must leave nothing behind
+    # for the next one to trip over.
+    def clone_plugin(spec, dest)
+      clone(spec.url, spec.branch, dest) ||
+        clone(spec.github_shorthand_url, spec.branch, dest)
     end
 
-    # Full-history clone, like the original (no --depth).
-    def clone(url, branch, into)
+    # Full-history clone, like the original (no --depth), into an explicit
+    # destination: under the store the directory name is a content key, not
+    # git's guess from the URL.
+    def clone(url, branch, dest)
+      FileUtils.rm_rf(dest)
       args = ["git", "clone", "--single-branch"]
       args += ["-b", branch] if branch && !branch.empty?
-      args += ["--recursive", url]
-      system(NO_PROMPT, *args, chdir: into, out: File::NULL, err: File::NULL)
+      args += ["--recursive", url, dest]
+      system(NO_PROMPT, *args, out: File::NULL, err: File::NULL)
+    end
+
+    # A disposable working copy of a store entry. Cloning a local path makes
+    # git hardlink the object database, so this costs almost nothing; pointing
+    # origin back at the real upstream is what makes a later `git pull` behave
+    # exactly as the old in-place pull did.
+    def clone_working_copy(src, url, dest)
+      FileUtils.rm_rf(dest)
+      return false unless system(NO_PROMPT, "git", "clone", "--recursive", src, dest,
+                                 out: File::NULL, err: File::NULL)
+      return true if url.nil? || url.empty?
+
+      system(NO_PROMPT, "git", "-C", dest, "remote", "set-url", "origin", url,
+             out: File::NULL, err: File::NULL)
     end
 
     # `git pull` + submodule init; combined output feeds the `    | `
@@ -56,6 +76,27 @@ module Tempo
     def commit_present?(dir, commit)
       system(NO_PROMPT, "git", "-C", dir, "cat-file", "-e", "#{commit}^{commit}",
              out: File::NULL, err: File::NULL)
+    end
+
+    def repo?(dir)
+      system(NO_PROMPT, "git", "-C", dir, "rev-parse", "--git-dir",
+             out: File::NULL, err: File::NULL)
+    end
+
+    # Untracked files count as dirty on purpose: adoption *moves* the tree into
+    # a store entry other configs may share, so anything not reproducible from
+    # the remote is a reason to leave the directory alone.
+    def clean_worktree?(dir)
+      out, status = Open3.capture2(NO_PROMPT, "git", "-C", dir, "status", "--porcelain",
+                                   err: File::NULL)
+      status.success? && out.strip.empty?
+    end
+
+    # Is HEAD contained in some remote-tracking branch? Purely local — it reads
+    # refs/remotes, never the network. False for a locally-committed HEAD, which
+    # is exactly the tree adoption must not swallow.
+    def head_on_remote_branch?(dir)
+      !capture(dir, "branch", "-r", "--contains", "HEAD").nil?
     end
 
     def fetch(dir)
