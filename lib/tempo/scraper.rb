@@ -21,6 +21,9 @@ module Tempo
     def initialize(candidate_files, home: Dir.home)
       @candidates = candidate_files
       @home = home
+      @specs = []
+      @entries = []
+      @visited = {}
     end
 
     def scan
@@ -29,6 +32,28 @@ module Tempo
       @visited = {}
       @candidates.each { |path| scan_file(path) }
       Result.new(plugin_specs: @specs, entries: @entries)
+    end
+
+    # Public because ConfigEdit walks the same include graph to cite a
+    # declaration's file:line, and include resolution must have exactly one
+    # dialect (quoting, ~/$VAR expansion, globs) — the same rule the plugin
+    # matcher follows.
+    def resolve_sourced(rest)
+      path =
+        case rest[0]
+        when "'" then rest[1..].split("'", 2)[0]
+        when '"' then rest[1..].split('"', 2)[0]
+        else rest.split(/[ \t]+/).first
+        end
+      return [] if path.nil? || path.empty?
+
+      expanded = expand(path)
+      if expanded.match?(/[*?\[]/)
+        record_dir(File.dirname(expanded))
+        Dir.glob(expanded).sort
+      else
+        [expanded]
+      end
     end
 
     private
@@ -76,24 +101,6 @@ module Tempo
         @entries << FileEntry.new(path: abs, exists: true, mtime: st.mtime.to_i, size: st.size)
       else
         @entries << FileEntry.new(path: abs, exists: false)
-      end
-    end
-
-    def resolve_sourced(rest)
-      path =
-        case rest[0]
-        when "'" then rest[1..].split("'", 2)[0]
-        when '"' then rest[1..].split('"', 2)[0]
-        else rest.split(/[ \t]+/).first
-        end
-      return [] if path.nil? || path.empty?
-
-      expanded = expand(path)
-      if expanded.match?(/[*?\[]/)
-        record_dir(File.dirname(expanded))
-        Dir.glob(expanded).sort
-      else
-        [expanded]
       end
     end
 

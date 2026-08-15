@@ -55,8 +55,10 @@ module Tempo
         return @ui.exit_code
       end
 
-      report(matches)
-      @ui.exit_code
+      report(matches, numbered: picker?)
+      return @ui.exit_code unless picker?
+
+      pick(matches)
     end
 
     private
@@ -69,12 +71,39 @@ module Tempo
       haystack.compact.any? { |field| field.to_s.downcase.include?(needle) }
     end
 
-    def report(matches)
+    def report(matches, numbered: false)
       matches.each_with_index do |plugin, i|
         @ui.ok("") unless i.zero?
-        @ui.ok("#{plugin["name"]} — #{plugin["description"]}")
+        prefix = numbered ? "#{i + 1}. " : ""
+        @ui.ok("#{prefix}#{plugin["name"]} — #{plugin["description"]}")
         @ui.ok("  #{Spec.plugin_line(plugin["repo"])}")
       end
+    end
+
+    # No TTY, no picker: `search` in a script or a pipe stays exactly the
+    # read-only report it has always been, numbering included — the numbers
+    # only mean something when there is somebody to type one.
+    def picker?
+      $stdin.tty?
+    end
+
+    # Deliberately teletype-simple: a numbered list and one line of stdin. No
+    # TUI, no cursor keys, no alternate screen — this runs inside whatever
+    # terminal the user already has, and Enter is always the safe answer.
+    # The prompt goes straight to the terminal, like the trust prompt, since
+    # `ui` may be routing output through tmux.
+    def pick(matches)
+      $stdout.print("Install which? [1-#{matches.size}, Enter to skip] ")
+      $stdout.flush
+      answer = $stdin.gets.to_s.strip
+      return @ui.exit_code if answer.empty?
+
+      unless answer.match?(/\A\d+\z/) && (1..matches.size).cover?(answer.to_i)
+        @ui.err("not a choice between 1 and #{matches.size}: #{answer}")
+        return @ui.exit_code
+      end
+
+      ConfigEdit.add(@env, @ui, [matches[answer.to_i - 1]["repo"]], trust: Trust.gate(@env))
     end
 
     # Cache-first: a fresh cache is served without any network call at all.

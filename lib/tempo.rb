@@ -14,6 +14,7 @@ require "tempo/search"
 require "tempo/doctor"
 require "tempo/init"
 require "tempo/trust"
+require "tempo/config_edit"
 require "tempo/commands"
 require "tempo/cli"
 

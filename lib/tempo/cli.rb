@@ -10,6 +10,8 @@ module Tempo
 
         init [--yes]            set up tmux to use this checkout (drop-in for tpm)
         install [--yes]         install declared plugins
+        add <spec> [--yes]      declare a plugin in your config, then install it
+        remove <name>           delete a plugin's declaration from your config
         update all|<name>...    update plugins (parallel)
         clean                   remove undeclared plugin dirs
         sync [--frozen] [--yes] install missing + restore locked + clean
@@ -25,7 +27,7 @@ module Tempo
       options: --tmux-echo   deliver output through `tmux run-shell echo`
                --frozen      (sync/restore) enforce the lockfile offline;
                              fails if it is not satisfiable, never writes it
-               --yes, -y     (install/sync) trust every source about to be
+               --yes, -y     (install/add/sync) trust every source about to be
                              cloned instead of asking; see `trust`
     TEXT
 
@@ -35,6 +37,7 @@ module Tempo
     FLAGS = {
       "init" => ["--yes", "-y"],
       "install" => ["--yes", "-y"],
+      "add" => ["--yes", "-y"],
       "generate" => ["--force"],
       "sync" => ["--frozen", "--yes", "-y"],
       "restore" => ["--frozen"],
@@ -60,6 +63,8 @@ module Tempo
 
       case command
       when "install" then Commands.install(env, ui, Trust.gate(env, yes: yes))
+      when "add" then ConfigEdit.add(env, ui, args, trust: Trust.gate(env, yes: yes))
+      when "remove" then ConfigEdit.remove(env, ui, args)
       when "update" then Commands.update(env, ui, args)
       when "clean" then Commands.clean(env, ui)
       when "generate" then Commands.generate(env)

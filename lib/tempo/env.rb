@@ -11,6 +11,13 @@ module Tempo
       @overrides = overrides
     end
 
+    # A second Env carrying the same overrides, with nothing memoized. Only
+    # `add` needs it: it writes a declaration into the config and then
+    # installs, and the scan behind `specs` is memoized per instance.
+    def reload
+      self.class.new(**@overrides)
+    end
+
     def home
       @overrides[:home] || Dir.home
     end
