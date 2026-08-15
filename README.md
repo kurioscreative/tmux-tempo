@@ -154,7 +154,9 @@ The same operations — and the new ones — are available from a shell:
   update all   update plugins (parallel)
   clean        remove undeclared plugin dirs
   sync         install missing + restore locked commits + clean
+               (--frozen: enforce the lock offline, never write it)
   restore      check out lockfile commits (detached HEAD)
+               (--frozen: as above, without installing or cleaning)
   status       declared plugins and lock state
   generate     regenerate the loader artifact
   doctor       check requirements, paths and artifact health
@@ -171,6 +173,29 @@ dotfiles and this repo: `bin/tempo sync` reproduces the exact locked
 plugin set — same commits, not just same plugins. `restore` checks out
 locked commits without installing or cleaning; `update` moves the lock
 forward.
+
+#### `--frozen`
+
+`sync --frozen` (and `restore --frozen`) is the `cargo --locked` posture,
+for CI and for machines where a surprise download is not acceptable. It
+never touches the network and never writes `tempo.lock`. Before changing
+anything it checks that every declared plugin is installed, is in the
+lockfile, and has its locked commit already in its local clone. If any of
+those fails it prints **every** offending plugin and exits 1 having changed
+nothing — no partial enforcement of a lock that cannot be satisfied:
+
+```
+$ bin/tempo sync --frozen
+frozen: lockfile not satisfied
+  "tmux-sensible" not installed
+  "tmux-yank" locked commit a1b2c3d4e5f6 missing locally
+```
+
+The fix is a plain `bin/tempo sync`, which is allowed to download.
+
+Unrecognized flags are a usage error everywhere (`--frozen` on `install`
+included — installing is a network operation by definition), so a typo
+fails loudly instead of being ignored.
 
 ## Troubleshooting
 
