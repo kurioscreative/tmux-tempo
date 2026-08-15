@@ -454,6 +454,48 @@ flow_store_adopts_existing_flat_clone() {
 	assert_file "$HOME/plugins_ran.log"
 }
 
+# Rollback, judged by what actually runs. The fixture's `*.tmux` prints a
+# version marker, so a real tmux server executing it after the rollback is the
+# only assertion that cannot be faked by a lock-only revert: the plugin must
+# emit its PRE-update line again.
+flow_rollback_reverts_plugin_content() {
+	install_tempo_copy "$PLUGINS_DIR/tpm"
+	_repo="$FIXTURES/tmux-example-plugin"
+	printf '#!/bin/sh\necho "v1 $0" >> "$HOME/plugins_ran.log"\n' > "$_repo/tmux-example-plugin.tmux"
+	fixgit "$_repo" commit -qam v1
+	write_conf <<-EOF
+	set -g @plugin '$_repo'
+	run '~/.tmux/plugins/tpm/tpm'
+	EOF
+	start_tmux || return 1
+	"$PLUGINS_DIR/tpm/bin/tempo" install >/dev/null 2>&1 || fail "install failed"
+	cp "$HOME/tempo.lock" "$SANDBOX/lock.v1"
+	cp "$HOME/.local/share/tempo/load.sh" "$SANDBOX/art.v1"
+
+	# Upstream moves, and the update follows it.
+	printf '#!/bin/sh\necho "v2 $0" >> "$HOME/plugins_ran.log"\n' > "$_repo/tmux-example-plugin.tmux"
+	fixgit "$_repo" commit -qam v2
+	out="$("$PLUGINS_DIR/tpm/bin/tempo" update all 2>&1)"
+	rc=$?
+	[ "$rc" -eq 0 ] || { fail "update all exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
+	cmp -s "$HOME/tempo.lock" "$SANDBOX/lock.v1" && fail "update did not move the lockfile"
+	reload_and_wait_for_plugins
+	grep -q '^v2 ' "$HOME/plugins_ran.log" || fail "the server did not run v2 after the update"
+
+	out="$("$PLUGINS_DIR/tpm/bin/tempo" rollback 2>&1)"
+	rc=$?
+	[ "$rc" -eq 0 ] || { fail "rollback exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
+	assert_contains "$out" "rolled back to generation 1"
+	cmp -s "$HOME/tempo.lock" "$SANDBOX/lock.v1" || fail "rollback did not restore the lockfile"
+	cmp -s "$HOME/.local/share/tempo/load.sh" "$SANDBOX/art.v1" || fail "rollback changed the artifact"
+	assert_store_link "$PLUGINS_DIR/tmux-example-plugin"
+
+	reload_and_wait_for_plugins
+	grep -q '^v1 ' "$HOME/plugins_ran.log" ||
+		{ fail "the server did not run the pre-update plugin content after rollback"; \
+			sed 's/^/      | /' "$HOME/plugins_ran.log"; }
+}
+
 # --- runner ------------------------------------------------------------------
 
 run_test() {
@@ -485,7 +527,8 @@ for _test in \
 	flow_frozen_sync_offline \
 	flow_frozen_violation_stays_offline \
 	flow_store_backed_install_runs_through_the_symlink \
-	flow_store_adopts_existing_flat_clone; do
+	flow_store_adopts_existing_flat_clone \
+	flow_rollback_reverts_plugin_content; do
 	run_test "$_test"
 done
 
