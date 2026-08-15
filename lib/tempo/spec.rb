@@ -9,6 +9,14 @@ module Tempo
   class Spec
     attr_reader :raw, :url, :branch
 
+    # The canonical serialization of a declaration — the scraper's own
+    # primary form (see Scraper::PLUGIN_LINE), single-quoted. `search` prints
+    # it for copy-paste and config editing writes it, so there is exactly one
+    # definition of what a declaration looks like.
+    def self.plugin_line(spec)
+      "set -g @plugin '#{spec}'"
+    end
+
     # Mirrors the original's `IFS='#' read -ra`: field 0 is the url, field 1
     # the branch; anything past a second '#' is discarded.
     def self.parse(raw)

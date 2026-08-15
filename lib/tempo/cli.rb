@@ -16,6 +16,7 @@ module Tempo
         restore [--frozen]      put every plugin back on its locked commit
         rollback [N]            undo: flip back to the previous generation (or N)
         generate [--force]      regenerate the loader artifact
+        search <query>          find plugins in the curated index
         status                  declared plugins, lock state and generations
         doctor                  check requirements, paths and artifact health
         update-list             internal: plugin list behind the prefix+U prompt
@@ -58,6 +59,7 @@ module Tempo
       when "sync" then Commands.sync(env, ui, frozen: frozen)
       when "restore" then Commands.restore(env, ui, frozen: frozen)
       when "rollback" then Commands.rollback(env, ui, args)
+      when "search" then Search.run(env, ui, args)
       when "status" then Commands.status(env, ui)
       when "update-list" then Commands.update_list(env, ui)
       when "doctor" then Doctor.run(env, ui)
