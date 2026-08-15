@@ -81,6 +81,36 @@ ruby_free_path() {
 	printf '%s\n' "$_shim"
 }
 
+# A `git` that is the real git except for the three subcommands that reach
+# the network — those log the call and exit 99. Prepending it to PATH proves
+# offline-ness from outside the Ruby, which no in-process assertion can.
+# tempo always invokes git as `git <sub> …` or `git -C <dir> <sub> …`, so the
+# subcommand is $1 or $3; matching those exactly avoids false hits on paths.
+make_git_shim() {
+	FLOW_SHIM_BIN="$SANDBOX/frozen-bin"
+	FLOW_NETWORK_LOG="$SANDBOX/network.log"
+	FLOW_REAL_GIT="$(command -v git)"
+	export FLOW_NETWORK_LOG FLOW_REAL_GIT
+	mkdir -p "$FLOW_SHIM_BIN"
+	cat > "$FLOW_SHIM_BIN/git" <<'SHIM'
+#!/bin/sh
+for _a in "$1" "${3:-}"; do
+	case "$_a" in
+		clone|fetch|pull) printf '%s\n' "$*" >> "$FLOW_NETWORK_LOG"; exit 99 ;;
+	esac
+done
+exec "$FLOW_REAL_GIT" "$@"
+SHIM
+	chmod +x "$FLOW_SHIM_BIN/git"
+}
+
+assert_no_network() {
+	[ ! -f "$FLOW_NETWORK_LOG" ] || {
+		fail "$1 reached the network"
+		sed 's/^/      | git /' "$FLOW_NETWORK_LOG"
+	}
+}
+
 # --- tmux lifecycle ----------------------------------------------------------
 
 # Starts the sandbox server; tpm's run-shell bootstrap is asynchronous, so
@@ -309,6 +339,48 @@ flow_clean_after_fresh_init() {
 	assert_not_contains "$out" 'Removing "tempo"'
 }
 
+# The CI gesture: dotfiles are checked out with a committed tempo.lock and
+# the plugins already at their locked commits. `sync --frozen` must enforce
+# that state and exit 0 without a single network call, and without
+# rewriting the lock it was handed.
+flow_frozen_sync_offline() {
+	install_tempo_copy "$PLUGINS_DIR/tpm"
+	write_conf <<-EOF
+	set -g @plugin '$FIXTURES/tmux-example-plugin'
+	EOF
+	"$PLUGINS_DIR/tpm/bin/tempo" install >/dev/null 2>&1 || fail "seed install failed"
+	cp "$HOME/tempo.lock" "$SANDBOX/lock.before"
+	make_git_shim
+
+	out="$(PATH="$FLOW_SHIM_BIN:$PATH" "$PLUGINS_DIR/tpm/bin/tempo" sync --frozen 2>&1)"
+	rc=$?
+	[ "$rc" -eq 0 ] || { fail "sync --frozen exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
+	assert_no_network "sync --frozen"
+	cmp -s "$HOME/tempo.lock" "$SANDBOX/lock.before" || fail "frozen rewrote the lockfile"
+	assert_file "$HOME/.local/share/tempo/load.sh"
+}
+
+# The same box with one plugin missing: frozen must refuse, name it, and
+# stay offline even on the failure path — no opportunistic re-clone.
+flow_frozen_violation_stays_offline() {
+	install_tempo_copy "$PLUGINS_DIR/tpm"
+	write_conf <<-EOF
+	set -g @plugin '$FIXTURES/tmux-example-plugin'
+	EOF
+	"$PLUGINS_DIR/tpm/bin/tempo" install >/dev/null 2>&1 || fail "seed install failed"
+	cp "$HOME/tempo.lock" "$SANDBOX/lock.before"
+	rm -rf "$PLUGINS_DIR/tmux-example-plugin"
+	make_git_shim
+
+	out="$(PATH="$FLOW_SHIM_BIN:$PATH" "$PLUGINS_DIR/tpm/bin/tempo" sync --frozen 2>&1)"
+	rc=$?
+	[ "$rc" -eq 1 ] || fail "expected exit 1 from a violating frozen sync, got $rc"
+	assert_contains "$out" "tmux-example-plugin"
+	assert_no_network "a violating sync --frozen"
+	[ ! -d "$PLUGINS_DIR/tmux-example-plugin" ] || fail "frozen re-installed a missing plugin"
+	cmp -s "$HOME/tempo.lock" "$SANDBOX/lock.before" || fail "a failed frozen run rewrote the lockfile"
+}
+
 # --- runner ------------------------------------------------------------------
 
 run_test() {
@@ -336,7 +408,9 @@ for _test in \
 	flow_declared_plugin_suppresses_guidance \
 	flow_init_fresh \
 	flow_init_drop_in \
-	flow_clean_after_fresh_init; do
+	flow_clean_after_fresh_init \
+	flow_frozen_sync_offline \
+	flow_frozen_violation_stays_offline; do
 	run_test "$_test"
 done
 
