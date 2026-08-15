@@ -88,6 +88,22 @@ class TestLockfile < Minitest::Test
     assert_equal locked, Tempo::Lockfile.read(lock_path).dig("tmux-example-plugin", "commit")
   end
 
+  # PRD OQ5: legacy `@tpm_plugins` entries must lock identically to `@plugin`
+  # ones. `specs: nil` is load-bearing — it forces Env#specs through the real
+  # merge (option string + scraped lines); overriding `specs:` would test the
+  # override, not the merge this exists to pin.
+  def test_legacy_tpm_plugins_option_locks_like_a_scraped_spec
+    env = build_env(@dir, specs: nil, tpm_plugins_option: "#{@repo}#dev")
+    install(env)
+
+    entry = Tempo::Lockfile.read(File.join(@dir, "tempo.lock"))
+                           .fetch("tmux-example-plugin")
+    assert_equal @repo, entry["url"]
+    assert_equal "dev", entry["branch"]
+    dir = File.join(@plugins, "tmux-example-plugin")
+    assert_equal git(dir, "rev-parse", "HEAD").strip, entry["commit"]
+  end
+
   def test_unparseable_lock_is_ignored
     File.write(File.join(@dir, "tempo.lock"), "not json{")
     assert_equal({}, Tempo::Lockfile.read(File.join(@dir, "tempo.lock")))
