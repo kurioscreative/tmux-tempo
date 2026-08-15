@@ -50,6 +50,14 @@ module Tempo
              out: File::NULL, err: File::NULL)
     end
 
+    # Read-only presence probe for the frozen preflight: is this commit
+    # object already in the local clone? `git checkout` answers the same
+    # question but mutates, and preflight must leave the tree untouched.
+    def commit_present?(dir, commit)
+      system(NO_PROMPT, "git", "-C", dir, "cat-file", "-e", "#{commit}^{commit}",
+             out: File::NULL, err: File::NULL)
+    end
+
     def fetch(dir)
       system(NO_PROMPT, "git", "-C", dir, "fetch", "--quiet",
              out: File::NULL, err: File::NULL)

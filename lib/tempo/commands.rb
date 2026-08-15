@@ -69,7 +69,12 @@ module Tempo
 
     # sync = install missing + check out locked commits + clean undeclared
     # (D5). The final lock rewrite snapshots the now-enforced disk state.
-    def sync(env, ui)
+    # `--frozen` is the `cargo --locked` posture instead: prove the lock is
+    # satisfiable from what is already on disk, enforce it offline, and
+    # never write the lock back.
+    def sync(env, ui, frozen: false)
+      return frozen_enforce(env, ui, clean: true) if frozen
+
       prepare_path(env, ui, verify_writable: true)
       install_missing(env, ui)
       restore_locked(env, ui)
@@ -80,7 +85,9 @@ module Tempo
 
     # restore = the checkout-locked-commits part of sync, alone. Leaves
     # clones on a detached HEAD by design; `update` moves the lock forward.
-    def restore(env, ui)
+    def restore(env, ui, frozen: false)
+      return frozen_enforce(env, ui, clean: false) if frozen
+
       restore_locked(env, ui)
       Generator.new(env).generate
       ui.exit_code
@@ -206,7 +213,7 @@ module Tempo
       false
     end
 
-    def restore_locked(env, ui)
+    def restore_locked(env, ui, frozen: false)
       lock = Lockfile.read(env.lockfile_path)
       env.specs.each do |spec|
         entry = lock[spec.name]
@@ -216,11 +223,54 @@ module Tempo
         dir = env.plugin_dir(spec.name)
         next if Git.head_commit(dir) == entry["commit"]
 
-        if Git.checkout(dir, entry["commit"]) ||
-           (Git.fetch(dir) && Git.checkout(dir, entry["commit"]))
+        ok = Git.checkout(dir, entry["commit"])
+        # The fetch retry is restore's only network touch; frozen drops it,
+        # and preflight has already proven the object is here.
+        ok ||= Git.fetch(dir) && Git.checkout(dir, entry["commit"]) unless frozen
+        if ok
           ui.ok(%(  "#{spec.name}" restored to #{entry["commit"][0, 12]}))
         else
           ui.err(%(  "#{spec.name}" restore fail))
+        end
+      end
+    end
+
+    # Verify-then-mutate. Every violation is named and *nothing* changes —
+    # not the clones, not the lock, not the artifact — unless the whole lock
+    # is satisfiable from local objects. Partial enforcement of a broken
+    # lock is worse than no enforcement.
+    def frozen_enforce(env, ui, clean:)
+      violations = frozen_violations(env)
+      unless violations.empty?
+        ui.err("frozen: lockfile not satisfied")
+        violations.each { |name, reason| ui.err(%(  "#{name}" #{reason})) }
+        return 1
+      end
+
+      restore_locked(env, ui, frozen: true)
+      clean_undeclared(env, ui) if clean # local-only, so frozen still runs it
+      Generator.new(env).generate # the hot path must reflect enforced disk
+      ui.exit_code
+    end
+
+    # The three ways a lock can fail to be satisfiable offline, at most one
+    # line per declared plugin (duplicate specs collapse, like
+    # Lockfile.write). A missing or unparseable lock reads as {}, so every
+    # declared plugin lands in the second bucket — which is correct.
+    def frozen_violations(env)
+      lock = Lockfile.read(env.lockfile_path)
+      seen = {}
+      env.specs.each_with_object([]) do |spec, out|
+        next if seen[spec.name]
+
+        seen[spec.name] = true
+        commit = lock.dig(spec.name, "commit")
+        if !env.installed?(spec.name)
+          out << [spec.name, "not installed"]
+        elsif commit.nil?
+          out << [spec.name, "not in the lockfile"]
+        elsif !Git.commit_present?(env.plugin_dir(spec.name), commit)
+          out << [spec.name, "locked commit #{commit[0, 12]} missing locally"]
         end
       end
     end
