@@ -538,6 +538,58 @@ flow_cli_install_gates_untrusted_source() {
 	assert_store_link "$PLUGINS_DIR/tmux-example-plugin"
 }
 
+# `tempo add` end to end: the declaration lands in the real config file, the
+# plugin installs through the store, and a real server boots and runs it.
+# Judged by the plugin's own log line, which no config assertion can fake.
+flow_add_declares_and_boots_the_plugin() {
+	install_tempo_copy "$PLUGINS_DIR/tpm"
+	write_conf <<-EOF
+	run '~/.tmux/plugins/tpm/tpm'
+	EOF
+	start_tmux || return 1
+	out="$("$PLUGINS_DIR/tpm/bin/tempo" add "$FIXTURES/tmux-example-plugin" --yes 2>&1)"
+	rc=$?
+	[ "$rc" -eq 0 ] || { fail "add exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
+	assert_contains "$out" '"tmux-example-plugin" download success'
+	grep -qF "set -g @plugin '$FIXTURES/tmux-example-plugin'" "$HOME/.tmux.conf" ||
+		fail "the canonical declaration is not in the conf"
+	ls "$HOME"/.tmux.conf.bak-* >/dev/null 2>&1 || fail "add did not back up the conf"
+	assert_store_link "$PLUGINS_DIR/tmux-example-plugin"
+	assert_file "$HOME/tempo.lock"
+
+	reload_and_wait_for_plugins
+	assert_file "$HOME/plugins_ran.log"
+}
+
+# `tempo remove` end to end: the declaration goes, the plugin's *files* stay
+# (that is `tempo clean`'s job), and after a regenerate the server no longer
+# runs it — the only assertion that proves the hot path followed the edit.
+flow_remove_stops_the_plugin_from_running() {
+	install_tempo_copy "$PLUGINS_DIR/tpm"
+	write_conf <<-EOF
+	set -g @plugin '$FIXTURES/tmux-example-plugin'
+	run '~/.tmux/plugins/tpm/tpm'
+	EOF
+	start_tmux || return 1
+	"$PLUGINS_DIR/tpm/bin/tempo" install --yes >/dev/null 2>&1 || fail "seed install failed"
+	reload_and_wait_for_plugins
+	assert_file "$HOME/plugins_ran.log"
+
+	out="$("$PLUGINS_DIR/tpm/bin/tempo" remove tmux-example-plugin 2>&1)"
+	rc=$?
+	[ "$rc" -eq 0 ] || { fail "remove exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
+	assert_contains "$out" "tempo clean"
+	if grep -q '@plugin' "$HOME/.tmux.conf"; then
+		fail "the declaration survived remove"
+		sed 's/^/      | /' "$HOME/.tmux.conf"
+	fi
+	assert_dir "$PLUGINS_DIR/tmux-example-plugin" # remove never deletes files
+
+	"$PLUGINS_DIR/tpm/bin/tempo" generate >/dev/null 2>&1 || fail "generate exited non-zero"
+	reload_and_wait_for_plugins
+	[ ! -f "$HOME/plugins_ran.log" ] || fail "the plugin still ran after remove + generate"
+}
+
 # --- runner ------------------------------------------------------------------
 
 run_test() {
@@ -572,7 +624,9 @@ for _test in \
 	flow_store_adopts_existing_flat_clone \
 	flow_rollback_reverts_plugin_content \
 	flow_binding_install_is_ungated \
-	flow_cli_install_gates_untrusted_source; do
+	flow_cli_install_gates_untrusted_source \
+	flow_add_declares_and_boots_the_plugin \
+	flow_remove_stops_the_plugin_from_running; do
 	run_test "$_test"
 done
 
