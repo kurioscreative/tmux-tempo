@@ -191,12 +191,14 @@ module Tempo
       write_atomic(File.join(root(env), "current"), "#{number}\n")
     end
 
-    # Keep the newest KEEP, plus whatever the marker points at — rolling back
-    # past the retention window must not make the state you are standing on
-    # unreachable.
+    # Keep the newest KEEP. Rolling back does not need a special case here:
+    # `prune` only ever runs from `file`, which has just marked the newest
+    # generation current, and that generation records the links the rollback
+    # left in place — so the state survives even when the *number* you rolled
+    # back to ages out.
     def prune(env)
       known = numbers(env)
-      keep = (known.last(KEEP) + [current(env)]).compact.uniq
+      keep = known.last(KEEP)
       (known - keep).each { |n| FileUtils.rm_rf(dir(env, n)) }
       gc(env, keep)
     end
