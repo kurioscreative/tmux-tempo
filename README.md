@@ -152,6 +152,9 @@ The same operations — and the new ones — are available from a shell:
   init         wire this checkout into your tmux setup
   install      install declared plugins
                (--yes: trust new sources without asking)
+  add <spec>   declare a plugin in your config, then install it
+               (--yes: trust new sources without asking)
+  remove       delete a plugin's declaration from your config
   update all   update plugins (parallel)
   clean        remove undeclared plugin dirs
   sync         install missing + restore locked commits + clean
@@ -186,11 +189,64 @@ tempo makes outside `install`/`update` — starting tmux never touches the
 network, and neither does anything else. If the fetch fails, an existing
 cached copy is used and says so; `tempo doctor` shows how old it is.
 
-Nothing about search writes: it will not edit your config or install
-anything.
+Run `tempo search` in a terminal and it also offers to install one of the
+matches for you:
 
-Uninstalling a **plugin** is the tpm gesture: delete (or comment out) its
-`@plugin` line, then `prefix` + `alt` + `u`.
+```
+$ tempo search clipboard
+1. tmux-yank — Copy to the system clipboard from copy mode and the command prompt
+  set -g @plugin 'tmux-plugins/tmux-yank'
+
+Install which? [1-1, Enter to skip] 1
+```
+
+Enter is always the safe answer, and the picker never appears without a
+terminal — in a pipe or a script, `search` prints its matches and stops.
+
+### Adding and removing plugins
+
+`tempo add` writes the declaration for you and installs it:
+
+```
+$ tempo add tmux-plugins/tmux-yank
+Added to /Users/you/.tmux.conf: set -g @plugin 'tmux-plugins/tmux-yank'
+Backed up /Users/you/.tmux.conf -> /Users/you/.tmux.conf.bak-20260815-114500
+Installing "tmux-yank"
+  "tmux-yank" download success
+```
+
+It appends exactly one line — the same canonical form `search` prints — and
+copies your config to a timestamped `.bak-` file first. A symlinked config
+(dotfiles setups) is written _through_: the link survives and the file in
+your repo is what changes. Adding a plugin you already declare, in any quote
+form, changes nothing and says where it is already declared.
+
+`tempo remove <name>` deletes the declaration again:
+
+```
+$ tempo remove tmux-yank
+Removed /Users/you/.tmux.conf:12: set -g @plugin 'tmux-plugins/tmux-yank'
+Its files are still installed — run `tempo clean` to delete them.
+```
+
+It only ever deletes a whole line it can fully parse, in your primary config.
+Anything else it refuses, names, and leaves alone:
+
+```
+$ tempo remove tmux-foo
+tempo remove: refusing to edit this declaration
+  /Users/you/.tmux.conf:8: set -g @tpm_plugins "tmux-foo tmux-bar"
+      the legacy @tpm_plugins list is never edited by tempo — remove it by hand.
+```
+
+The same refusal covers a declaration inside a `%if` block, one in a file
+your config `source-file`s, and one written in a form tempo cannot parse
+whole. Your config is your file: a manager that guesses at a hand-tuned line
+is worse than one that tells you exactly which line to edit. Nothing is
+changed on a refusal, not even a backup.
+
+The old gesture still works, of course: delete (or comment out) the
+`@plugin` line by hand, then `prefix` + `alt` + `u`.
 
 ### Where plugins actually live
 
