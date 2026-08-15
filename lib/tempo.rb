@@ -13,6 +13,7 @@ require "tempo/generations"
 require "tempo/search"
 require "tempo/doctor"
 require "tempo/init"
+require "tempo/trust"
 require "tempo/commands"
 require "tempo/cli"
 

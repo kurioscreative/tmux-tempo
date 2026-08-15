@@ -29,13 +29,16 @@ module Tempo
 
     module_function
 
-    def install(env, ui)
+    # `trust` is the first-install consent gate (D23), or nil for "ungated" —
+    # which is what every contract-mode caller gets, and what the unit suite
+    # gets by default.
+    def install(env, ui, trust = nil)
       prepare_path(env, ui, verify_writable: true)
       Store.adopt(env, ui)
       if env.specs.empty?
         ui.ok(ZERO_PLUGIN_GUIDANCE)
       else
-        install_missing(env, ui)
+        install_missing(env, ui, trust)
       end
       finalize(env, "install")
       ui.exit_code
@@ -74,12 +77,12 @@ module Tempo
     # `--frozen` is the `cargo --locked` posture instead: prove the lock is
     # satisfiable from what is already on disk, enforce it offline, and
     # never write the lock back.
-    def sync(env, ui, frozen: false)
+    def sync(env, ui, frozen: false, trust: nil)
       return frozen_enforce(env, ui, clean: true) if frozen
 
       prepare_path(env, ui, verify_writable: true)
       Store.adopt(env, ui)
-      install_missing(env, ui)
+      install_missing(env, ui, trust)
       restore_locked(env, ui)
       clean_undeclared(env, ui)
       finalize(env, "sync")
@@ -179,17 +182,24 @@ module Tempo
       ui.err("#{env.plugin_path} is not writable!") if verify_writable && !File.writable?(env.plugin_path)
     end
 
-    def install_missing(env, ui)
+    # The only place tempo clones a source it was not already managing, which
+    # is why the trust gate lives here and nowhere else — `update` and
+    # `restore_locked` are guarded by `env.installed?` and can only ever touch
+    # plugins this host already has. A declined plugin is skipped; the rest of
+    # the list still installs.
+    def install_missing(env, ui, trust = nil)
       env.specs.each do |spec|
         if env.installed?(spec.name)
           ui.ok(%(Already installed "#{spec.name}"))
+          next
+        end
+        next if trust && !trust.allow?(spec, ui)
+
+        ui.ok(%(Installing "#{spec.name}"))
+        if Store.install(env, spec)
+          ui.ok(%(  "#{spec.name}" download success))
         else
-          ui.ok(%(Installing "#{spec.name}"))
-          if Store.install(env, spec)
-            ui.ok(%(  "#{spec.name}" download success))
-          else
-            ui.err(%(  "#{spec.name}" download fail))
-          end
+          ui.err(%(  "#{spec.name}" download fail))
         end
       end
     end

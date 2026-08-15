@@ -9,14 +9,15 @@ module Tempo
       usage: tempo <command> [args]
 
         init [--yes]            set up tmux to use this checkout (drop-in for tpm)
-        install                 install declared plugins
+        install [--yes]         install declared plugins
         update all|<name>...    update plugins (parallel)
         clean                   remove undeclared plugin dirs
-        sync [--frozen]         install missing + restore locked + clean
+        sync [--frozen] [--yes] install missing + restore locked + clean
         restore [--frozen]      put every plugin back on its locked commit
         rollback [N]            undo: flip back to the previous generation (or N)
         generate [--force]      regenerate the loader artifact
         search <query>          find plugins in the curated index
+        trust <name-or-url>...  record a source as trusted, without installing
         status                  declared plugins, lock state and generations
         doctor                  check requirements, paths and artifact health
         update-list             internal: plugin list behind the prefix+U prompt
@@ -24,6 +25,8 @@ module Tempo
       options: --tmux-echo   deliver output through `tmux run-shell echo`
                --frozen      (sync/restore) enforce the lockfile offline;
                              fails if it is not satisfiable, never writes it
+               --yes, -y     (install/sync) trust every source about to be
+                             cloned instead of asking; see `trust`
     TEXT
 
     # Flags each subcommand accepts, on top of the global --tmux-echo.
@@ -31,10 +34,13 @@ module Tempo
     # exactly what let `sync --frozen` be a no-op that reported success.
     FLAGS = {
       "init" => ["--yes", "-y"],
+      "install" => ["--yes", "-y"],
       "generate" => ["--force"],
-      "sync" => ["--frozen"],
+      "sync" => ["--frozen", "--yes", "-y"],
       "restore" => ["--frozen"],
     }.freeze
+
+    YES = ["--yes", "-y"].freeze
 
     def self.run(argv)
       args = argv.dup
@@ -48,22 +54,24 @@ module Tempo
       end
 
       frozen = args.include?("--frozen")
+      yes = !(args & YES).empty?
       env = Env.new
       ui = UI.new(tmux_echo: tmux_echo)
 
       case command
-      when "install" then Commands.install(env, ui)
+      when "install" then Commands.install(env, ui, Trust.gate(env, yes: yes))
       when "update" then Commands.update(env, ui, args)
       when "clean" then Commands.clean(env, ui)
       when "generate" then Commands.generate(env)
-      when "sync" then Commands.sync(env, ui, frozen: frozen)
+      when "sync" then Commands.sync(env, ui, frozen: frozen, trust: Trust.gate(env, yes: yes))
       when "restore" then Commands.restore(env, ui, frozen: frozen)
       when "rollback" then Commands.rollback(env, ui, args)
       when "search" then Search.run(env, ui, args)
+      when "trust" then Trust.run(env, ui, args)
       when "status" then Commands.status(env, ui)
       when "update-list" then Commands.update_list(env, ui)
       when "doctor" then Doctor.run(env, ui)
-      when "init" then Init.run(env, ui, yes: !(args & ["--yes", "-y"]).empty?)
+      when "init" then Init.run(env, ui, yes: yes)
       else
         $stderr.puts(USAGE)
         1
