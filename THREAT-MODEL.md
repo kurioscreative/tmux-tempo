@@ -25,9 +25,12 @@ decision.
 Every install, update, clean, and sync writes `tempo.lock` next to your tmux
 config: for each plugin, its URL, its branch, and the exact commit — the
 40-character git ID of one precise snapshot of the code. `tempo sync` and
-`tempo restore` check that commit out (a _detached HEAD_: git is parked on
-one specific commit instead of following whatever a branch points at today).
-`sync --frozen` does the same offline and refuses to fetch anything.
+`tempo restore` put the plugin back on exactly that commit. (What they
+promise is the commit, not the shape of git's HEAD: the plugin directory is
+a link into the store, so restoring may land on a branch that happens to
+point at the locked commit, or on a detached HEAD. Either way the bytes that
+run are the locked ones.) `sync --frozen` does the same offline and refuses
+to fetch anything.
 
 What that buys you: an upstream **force-push** — the plugin's author
 rewriting already-published history so the same branch or tag name now
@@ -67,19 +70,22 @@ source explicit, and make the pin strong. That is honestly weaker than
 isolation. It helps you avoid running _unexpected_ code; it does nothing
 about code you chose to run.
 
-## The first-install trust prompt (scoped behavior)
+## The first-install trust prompt
 
-This section describes decided-and-scoped behavior that is not shipped yet;
-re-read it once the trust prompt lands.
+The first time the tempo CLI (`tempo install`, `tempo sync`) is asked to
+clone a source this host has never seen, it asks you to confirm, showing the
+URL it will actually fetch — both the URL as you wrote it and, for a
+`user/repo` shorthand, the GitHub URL it expands to. Approved URLs go in an
+**allowlist** at `~/.local/share/tempo/trusted_urls`: a plain text file, one
+URL per line, `#` comments allowed, which you can read and edit yourself.
+In a terminal you get a `[y/N]` prompt; with no terminal (a script, CI)
+tempo skips that plugin, prints how to proceed, and exits non-zero.
+`tempo trust <name-or-url>` records a source without installing it, and
+`--yes` approves whatever is about to be cloned, for automation.
 
-The first time the tempo CLI (`tempo install`, `tempo sync`, `tempo add`) is
-asked to clone a source this host has never seen, it asks you to confirm,
-showing the URL it will actually fetch. Approved URLs go in an **allowlist**
-— a plain text file of one URL per line under tempo's data directory, which
-you can read and edit yourself. In a terminal you get a `[y/N]` prompt; with
-no terminal (a script, CI) tempo skips that plugin, prints how to proceed,
-and exits non-zero. `--yes` approves without asking and records the URL, for
-automation.
+The allowlist is keyed on the **URL**, never on the plugin's name. Pointing
+an existing `@plugin` line at a different repository asks again, which is the
+case the check exists for.
 
 Its limits, stated plainly:
 

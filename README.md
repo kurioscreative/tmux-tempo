@@ -151,14 +151,17 @@ The same operations — and the new ones — are available from a shell:
 
   init         wire this checkout into your tmux setup
   install      install declared plugins
+               (--yes: trust new sources without asking)
   update all   update plugins (parallel)
   clean        remove undeclared plugin dirs
   sync         install missing + restore locked commits + clean
                (--frozen: enforce the lock offline, never write it)
+               (--yes: trust new sources without asking)
   restore      put every plugin back on its locked commit
                (--frozen: as above, without installing or cleaning)
   rollback     undo the last operation (rollback N: go to generation N)
   search       find plugins in the curated index
+  trust        record a source as trusted, without installing it
   status       declared plugins, lock state and generation history
   generate     regenerate the loader artifact
   doctor       check requirements, paths and artifact health
@@ -312,6 +315,55 @@ Installing a tmux plugin means running someone else's code with your
 privileges, and tempo does not sandbox it — the lockfile pins what runs,
 which is a real but limited defense. What that does and does not protect
 against is spelled out in [THREAT-MODEL.md](THREAT-MODEL.md).
+
+### The first-install prompt
+
+The first time you ask the **`bin/tempo` CLI** to clone a source this machine
+has never fetched from, it shows the URL git will actually be handed and asks:
+
+```
+$ tempo install
+
+tempo has never installed from this source on this host:
+
+  tmux-plugins/tmux-yank
+  https://git::@github.com/tmux-plugins/tmux-yank
+
+A tmux plugin runs as you, with your files and your network,
+every time tmux starts.
+Trust this source and install "tmux-yank"? [y/N]
+```
+
+Answer `y` and the URL is appended to `~/.local/share/tempo/trusted_urls` — a
+plain text file, one URL per line, `#` comments allowed, yours to read and
+edit. It is never asked about again. Answer `n` and that plugin is skipped;
+the others in your config still install.
+
+With no terminal (a script, CI, a cron job) there is nobody to ask, so tempo
+skips the plugin, prints the URL and how to proceed, and exits non-zero:
+
+```
+  "tmux-yank" skipped: source not trusted on this host
+      tmux-plugins/tmux-yank
+      approve it with `tempo trust tmux-yank`, or re-run with --yes
+```
+
+`tempo trust <name-or-url>` records a source without installing anything —
+give it a declared plugin's name or a URL directly. `--yes` on
+`install`/`sync` approves and records whatever is about to be cloned, which
+is the CI gesture.
+
+Three limits, stated plainly:
+
+- **The CLI only.** `prefix + I`, `prefix + U` and `bin/install_plugins`
+  install without asking, because their behavior is pinned byte-for-byte to
+  tpm's. On those paths your protection is the lockfile and `sync --frozen`.
+- **Per host, on purpose.** Syncing a committed lock onto a new machine asks
+  once per source (or takes `--yes`). Trusting a source on your laptop says
+  nothing about your server.
+- **It gates the URL, not the code.** Approving a repository approves every
+  commit ever fetched from it afterwards. It is a "did you mean to add this
+  source?" check, not a review.
 
 ## Troubleshooting
 
