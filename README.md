@@ -57,6 +57,12 @@ tmux required. It reads your tmux config files (`~/.tmux.conf`, the XDG
   no config at all, a minimal one is created (a commented `@plugin` example
   plus the run line). An already-present run line is not duplicated.
 
+Before touching anything, `init` prints its full plan — every rename,
+symlink, and config write, with final paths — and, when run interactively,
+asks `Proceed? [y/N]`. Answering no aborts with nothing changed. Pass
+`--yes` (or `-y`) to skip the prompt; non-interactive runs (scripts,
+provisioning) proceed without asking.
+
 If a run line already resolves into this checkout, `init` prints
 `Already set up` and does nothing — it is idempotent, safe to re-run. In
 fresh mode, if `<plugin-path>/tempo` already exists as a real directory or
