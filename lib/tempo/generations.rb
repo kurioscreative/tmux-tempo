@@ -85,7 +85,8 @@ module Tempo
       number = (numbers(env).max || 0) + 1
       gen = dir(env, number)
       FileUtils.mkdir_p(gen)
-      File.write(File.join(gen, "tempo.lock"), lock_body(env))
+      lock = File.file?(env.lockfile_path) ? File.read(env.lockfile_path) : ""
+      File.write(File.join(gen, "tempo.lock"), lock)
       links, unmanaged = snapshot(env)
       write_atomic(File.join(gen, "manifest.json"), "#{JSON.pretty_generate({
         "version" => 1,
@@ -115,11 +116,18 @@ module Tempo
 
       links = man.fetch("links", {})
       unmanaged = man.fetch("unmanaged", [])
-      links.each { |name, target| flip(env, ui, name, target, number) }
+      links.each { |name, target| flip(env, ui, name, target) }
       unmanaged.each do |name|
         ui.warn(%(  "#{name}" left alone: it was a plain directory in generation #{number}))
       end
-      report_absent(env, ui, number, links, unmanaged)
+      # Rollback never edits tmux.conf, so a plugin declared after this
+      # generation has nothing to roll back to. Say so; the next install/sync
+      # is what resolves it — inventing a lock entry for it would not.
+      Store.each_declared(env) do |name|
+        next if links.key?(name) || unmanaged.include?(name)
+
+        ui.warn(%(  "#{name}" is declared but not in generation #{number}; run install or sync))
+      end
 
       restore_lock(env, number)
       Generator.new(env).generate
@@ -130,29 +138,16 @@ module Tempo
 
     # --- internals --------------------------------------------------------
 
-    def flip(env, ui, name, target, number)
+    def flip(env, ui, name, target)
       if !File.directory?(target)
-        ui.err(%(  "#{name}" rollback fail: generation #{number}'s store entry is gone))
+        # GC never reclaims an entry a kept generation names, so this is a
+        # store someone deleted by hand rather than a retention bug.
+        ui.err(%(  "#{name}" rollback fail: its store entry is gone))
       elsif Store.link!(env, name, target)
         ui.ok(%(  "#{name}" rolled back))
       else
         ui.err(%(  "#{name}" rollback fail))
       end
-    end
-
-    # Rollback never edits tmux.conf, so a plugin declared today that the
-    # target generation predates cannot be rolled back to anything. Say so;
-    # the next install/sync is what resolves it.
-    def report_absent(env, ui, number, links, unmanaged)
-      Store.each_declared(env) do |name|
-        next if links.key?(name) || unmanaged.include?(name)
-
-        ui.warn(%(  "#{name}" is declared but not in generation #{number}; run install or sync))
-      end
-    end
-
-    def lock_body(env)
-      File.file?(env.lockfile_path) ? File.read(env.lockfile_path) : ""
     end
 
     def restore_lock(env, number)
