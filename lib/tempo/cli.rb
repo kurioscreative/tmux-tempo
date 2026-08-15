@@ -12,20 +12,39 @@ module Tempo
         install                 install declared plugins
         update all|<name>...    update plugins (parallel)
         clean                   remove undeclared plugin dirs
-        sync                    install missing + restore locked + clean
-        restore                 check out lockfile commits (detached HEAD)
+        sync [--frozen]         install missing + restore locked + clean
+        restore [--frozen]      check out lockfile commits (detached HEAD)
         generate [--force]      regenerate the loader artifact
         status                  declared plugins and lock state
         doctor                  check requirements, paths and artifact health
 
       options: --tmux-echo   deliver output through `tmux run-shell echo`
+               --frozen      (sync/restore) enforce the lockfile offline;
+                             fails if it is not satisfiable, never writes it
     TEXT
+
+    # Flags each subcommand accepts, on top of the global --tmux-echo.
+    # Anything else is a usage error: silently swallowing unknown flags is
+    # exactly what let `sync --frozen` be a no-op that reported success.
+    FLAGS = {
+      "init" => ["--yes", "-y"],
+      "generate" => ["--force"],
+      "sync" => ["--frozen"],
+      "restore" => ["--frozen"],
+    }.freeze
 
     def self.run(argv)
       args = argv.dup
       tmux_echo = !args.delete("--tmux-echo").nil?
-      args.delete("--force") # generate is always a full regeneration
       command = args.shift
+      unknown = unknown_flags(command, args)
+      unless unknown.empty?
+        $stderr.puts("unknown option: #{unknown.first}")
+        $stderr.puts(USAGE)
+        return 1
+      end
+
+      frozen = args.include?("--frozen")
       env = Env.new
       ui = UI.new(tmux_echo: tmux_echo)
 
@@ -34,8 +53,8 @@ module Tempo
       when "update" then Commands.update(env, ui, args)
       when "clean" then Commands.clean(env, ui)
       when "generate" then Commands.generate(env)
-      when "sync" then Commands.sync(env, ui)
-      when "restore" then Commands.restore(env, ui)
+      when "sync" then Commands.sync(env, ui, frozen: frozen)
+      when "restore" then Commands.restore(env, ui, frozen: frozen)
       when "status" then Commands.status(env, ui)
       when "update-list" then Commands.update_list(env, ui)
       when "doctor" then Doctor.run(env, ui)
@@ -44,6 +63,15 @@ module Tempo
         $stderr.puts(USAGE)
         1
       end
+    end
+
+    # Every token after `update` is prompt data the user typed — the
+    # prefix+U prompt hands the string over as-is — so `update --weird` must
+    # keep reaching the "not installed!" path instead of usage-erroring.
+    def self.unknown_flags(command, args)
+      return [] if command == "update"
+
+      args.select { |a| a.start_with?("-") } - FLAGS.fetch(command, [])
     end
   end
 end

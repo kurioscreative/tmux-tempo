@@ -176,3 +176,47 @@ class TestFrozen < Minitest::Test
     assert_equal 1, err.string.scan(%("tmux-alpha" not installed)).size
   end
 end
+
+# Flag parsing is rejected before Env is built, so these never touch tmux.
+class TestFlagParsing < Minitest::Test
+  include TempoTest
+
+  def run_cli(*argv)
+    rc = nil
+    _out, err = capture_io { rc = Tempo::CLI.run(argv) }
+    [rc, err]
+  end
+
+  def test_typo_of_a_known_flag_is_a_usage_error
+    rc, err = run_cli("sync", "--froozen")
+    assert_equal 1, rc
+    assert_includes err, "unknown option: --froozen"
+    assert_includes err, "usage:"
+  end
+
+  # The paired negative: --frozen is real, but only on sync/restore.
+  # install and update are inherently network operations (out of scope).
+  def test_frozen_is_rejected_on_commands_that_do_not_have_it
+    assert_equal 1, run_cli("install", "--frozen").first
+    assert_equal 1, run_cli("clean", "--frozen").first
+    assert_equal 1, run_cli("status", "--frozen").first
+  end
+
+  def test_usage_advertises_frozen_on_sync_and_restore
+    usage = Tempo::CLI::USAGE.lines
+    assert usage.any? { |l| l.include?("sync") && l.include?("frozen") }
+    assert usage.any? { |l| l.include?("restore") && l.include?("frozen") }
+  end
+
+  # Update's tokens are prompt data by contract, never flag-checked; the
+  # word-splitting path turns them into plugin names.
+  def test_update_tokens_are_never_flag_checked
+    dir = Dir.mktmpdir("tempo-flags")
+    env = build_env(dir, specs: [])
+    ui, _, err = capture_ui
+    assert_equal 1, Tempo::Commands.update(env, ui, ["--weird"])
+    assert_includes err.string, "--weird not installed!"
+  ensure
+    FileUtils.remove_entry(dir)
+  end
+end
