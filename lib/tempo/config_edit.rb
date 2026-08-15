@@ -81,17 +81,21 @@ module Tempo
     # --- add ---------------------------------------------------------------
 
     def add(args, trust: nil)
-      raw = args.find { |a| !a.start_with?("-") }
-      unless raw
-        @ui.err("usage: tempo add <owner/repo|url|path>[#branch]")
+      raws = args.reject { |a| a.start_with?("-") }
+      if raws.empty?
+        @ui.err("usage: tempo add <owner/repo|url|path>[#branch]...")
         return 1
       end
 
-      existing = declarations.find { |d| d.raw_specs.include?(raw) }
-      if existing
-        @ui.ok(%(Already declared "#{raw}" (#{existing.cite})))
-      else
-        append(raw)
+      # A list, like `tempo trust`: the spec grammar is uniform, and silently
+      # dropping every argument but the first is not a thing a CLI may do.
+      raws.each do |raw|
+        existing = declarations.find { |d| d.raw_specs.include?(raw) }
+        if existing
+          @ui.ok(%(Already declared "#{raw}" (#{existing.cite})))
+        else
+          append(raw)
+        end
       end
       # The scan behind `specs` is memoized per Env, so the install must run
       # against a fresh one or it would not see the line just written.
@@ -181,6 +185,7 @@ module Tempo
       end
       @ui.ok("Added to #{conf}: #{Spec.plugin_line(raw)}")
       @ui.ok("Backed up #{conf} -> #{backup}") if backup
+      @declarations = nil # a second spec in the same run must see this one
     end
 
     # A config whose last byte is not a newline would otherwise get the

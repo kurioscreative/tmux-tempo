@@ -154,6 +154,18 @@ class TestAddRemove < Minitest::Test
     assert_includes out, "Already declared"
   end
 
+  # Same list grammar as `tempo trust`. The repeat is the interesting half:
+  # the second pass has to see the line the first one just wrote.
+  def test_add_takes_a_list_and_never_repeats_itself
+    other = make_plugin_repo(@fixtures, "tmux-other-plugin")
+    write_conf("")
+
+    code, = add(repo, other, repo)
+
+    assert_equal 0, code
+    assert_equal "set -g @plugin '#{repo}'\nset -g @plugin '#{other}'\n", File.read(conf)
+  end
+
   def test_add_without_a_spec_is_a_usage_error
     code, _, err = add
 
