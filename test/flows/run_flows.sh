@@ -53,7 +53,9 @@ make_fixture_repo() {
 	_dir="$FIXTURES/$1"
 	mkdir -p "$_dir"
 	git -C "$_dir" init -q -b master
-	printf '#!/bin/sh\necho ran >> "$HOME/plugins_ran.log"\n' > "$_dir/$1.tmux"
+	# Logs its own $0: that is how a plugin finds its siblings, so it is also
+	# how a flow proves the store is reached through the *logical* path.
+	printf '#!/bin/sh\necho "$0" >> "$HOME/plugins_ran.log"\n' > "$_dir/$1.tmux"
 	chmod +x "$_dir/$1.tmux"
 	fixgit "$_dir" add -A
 	fixgit "$_dir" commit -qm init
@@ -128,6 +130,26 @@ start_tmux() {
 }
 
 # --- assertions --------------------------------------------------------------
+
+# Re-source the config so the run-shell bootstrap fires again, then wait for
+# the plugin's own log line. Cheaper and safer than cycling the server.
+reload_and_wait_for_plugins() {
+	rm -f "$HOME/plugins_ran.log"
+	tmux source-file "$HOME/.tmux.conf" 2>/dev/null
+	_i=0
+	while [ "$_i" -lt 50 ] && [ ! -f "$HOME/plugins_ran.log" ]; do
+		sleep 0.1
+		_i=$((_i + 1))
+	done
+}
+
+assert_store_link() {
+	[ -L "$1" ] || { fail "expected a symlink into the store: $1"; return 1; }
+	case "$(readlink "$1")" in
+		"$HOME/.local/share/tempo/store"/*) : ;;
+		*) fail "symlink does not point into the store: $(readlink "$1")" ;;
+	esac
+}
 
 fail() {
 	echo "    FAIL: $1"
@@ -381,6 +403,57 @@ flow_frozen_violation_stays_offline() {
 	cmp -s "$HOME/tempo.lock" "$SANDBOX/lock.before" || fail "a failed frozen run rewrote the lockfile"
 }
 
+# Store-backed install, end to end: the plugin path entry is a symlink into
+# the XDG store, and a real tmux server runs the plugin *through* it — with the
+# logical, unresolved path in $0, which is how plugins locate their own files.
+flow_store_backed_install_runs_through_the_symlink() {
+	install_tempo_copy "$PLUGINS_DIR/tpm"
+	write_conf <<-EOF
+	set -g @plugin '$FIXTURES/tmux-example-plugin'
+	run '~/.tmux/plugins/tpm/tpm'
+	EOF
+	start_tmux || return 1
+	out="$("$PLUGINS_DIR/tpm/bin/install_plugins" 2>&1)"
+	rc=$?
+	[ "$rc" -eq 0 ] || fail "install_plugins exited $rc"
+	assert_contains "$out" '"tmux-example-plugin" download success'
+	assert_store_link "$PLUGINS_DIR/tmux-example-plugin"
+	assert_dir "$PLUGINS_DIR/tmux-example-plugin/.git"
+
+	reload_and_wait_for_plugins
+	assert_file "$HOME/plugins_ran.log"
+	grep -q "plugins/tmux-example-plugin/tmux-example-plugin.tmux" "$HOME/plugins_ran.log" ||
+		{ fail "plugin did not run through the logical plugin-path"; \
+			sed 's/^/      | /' "$HOME/plugins_ran.log"; }
+}
+
+# Adoption under the store: a plugins tree an earlier manager (or a manual
+# clone) populated is taken over on the first mutating op — the real directory
+# becomes a symlink into the store at the *same* commit — and the server still
+# boots and runs the plugin afterwards.
+flow_store_adopts_existing_flat_clone() {
+	mkdir -p "$PLUGINS_DIR"
+	git clone -q "$FIXTURES/tmux-example-plugin" "$PLUGINS_DIR/tmux-example-plugin"
+	before="$(git -C "$PLUGINS_DIR/tmux-example-plugin" rev-parse HEAD)"
+	[ -L "$PLUGINS_DIR/tmux-example-plugin" ] && fail "fixture should start as a real dir"
+	install_tempo_copy "$PLUGINS_DIR/tpm"
+	write_conf <<-EOF
+	set -g @plugin '$FIXTURES/tmux-example-plugin'
+	run '~/.tmux/plugins/tpm/tpm'
+	EOF
+	start_tmux || return 1
+	out="$("$PLUGINS_DIR/tpm/bin/tempo" sync 2>&1)"
+	rc=$?
+	[ "$rc" -eq 0 ] || { fail "sync exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
+
+	assert_store_link "$PLUGINS_DIR/tmux-example-plugin"
+	after="$(git -C "$PLUGINS_DIR/tmux-example-plugin" rev-parse HEAD)"
+	[ "$before" = "$after" ] || fail "adoption moved HEAD: $before -> $after"
+
+	reload_and_wait_for_plugins
+	assert_file "$HOME/plugins_ran.log"
+}
+
 # --- runner ------------------------------------------------------------------
 
 run_test() {
@@ -410,7 +483,9 @@ for _test in \
 	flow_init_drop_in \
 	flow_clean_after_fresh_init \
 	flow_frozen_sync_offline \
-	flow_frozen_violation_stays_offline; do
+	flow_frozen_violation_stays_offline \
+	flow_store_backed_install_runs_through_the_symlink \
+	flow_store_adopts_existing_flat_clone; do
 	run_test "$_test"
 done
 
