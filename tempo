@@ -1,0 +1,9 @@
+#!/bin/sh
+# tempo — honest-name twin of the sibling `tpm` entry script, used by the
+# fresh-install layout that `tempo init` wires up:
+#
+#   run '~/.tmux/plugins/tempo/tempo'
+#
+# exec-by-path keeps $0 pointing into this directory, so tpm's
+# ROOT="$(cd "$(dirname "$0")" && pwd)" resolution stays correct.
+exec "$(dirname "$0")/tpm"
