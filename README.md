@@ -28,13 +28,12 @@ checkout (see Troubleshooting).
 Clone the repo anywhere you like, then let `tempo init` wire it in:
 
 ```sh
-git clone git@github.com:<your-github-username>/tmux-tempo.git ~/.tmux/plugins/tempo-src
+git clone https://github.com/kurioscreative/tmux-tempo.git ~/.tmux/plugins/tempo-src
 cd ~/.tmux/plugins/tempo-src
 bin/tempo init
 ```
 
-While this repo is private, clone over SSH as above (HTTPS will prompt for
-credentials). The path is yours to choose — `~/.tmux/plugins/tempo-src`,
+The path is yours to choose — `~/.tmux/plugins/tempo-src`,
 `~/src/tmux-tempo`, a stow package, anywhere. `init` records where the
 checkout actually is.
 
@@ -92,7 +91,7 @@ dotfiles snippet in the wild points there, and tempo impersonates that
 layout on purpose):
 
 ```sh
-git clone git@github.com:<your-github-username>/tmux-tempo.git ~/.tmux/plugins/tpm
+git clone https://github.com/kurioscreative/tmux-tempo.git ~/.tmux/plugins/tpm
 ```
 
 with the usual `run '~/.tmux/plugins/tpm/tpm'` line at the bottom of your
@@ -107,7 +106,7 @@ that is exactly the shape `init` creates.
 **From tpm**: clone and run `init`. That is the whole migration.
 
 ```sh
-git clone git@github.com:<your-github-username>/tmux-tempo.git ~/.tmux/plugins/tempo-src
+git clone https://github.com/kurioscreative/tmux-tempo.git ~/.tmux/plugins/tempo-src
 ~/.tmux/plugins/tempo-src/bin/tempo init
 ```
 
@@ -182,7 +181,8 @@ The second line is exactly what goes in your config — copy it in, then
 `prefix + I`. Search matches names, descriptions and tags, case-insensitively.
 
 The index is a single reviewed JSON file in its own public repo,
-`tmux-tempo-index` — no registry, no service, no account. It is
+[`tmux-tempo-index`](https://github.com/kurioscreative/tmux-tempo-index) — no
+registry, no service, no account. It is
 fetched the first time you search and cached for a day under
 `~/.local/share/tempo/index.json`. That fetch is the **only** network access
 tempo makes outside `install`/`update` — starting tmux never touches the
@@ -370,7 +370,8 @@ fails loudly instead of being ignored.
 Installing a tmux plugin means running someone else's code with your
 privileges, and tempo does not sandbox it — the lockfile pins what runs,
 which is a real but limited defense. What that does and does not protect
-against is spelled out in [THREAT-MODEL.md](THREAT-MODEL.md).
+against is spelled out in [THREAT-MODEL.md](THREAT-MODEL.md); to report a
+vulnerability in tempo itself, see [SECURITY.md](SECURITY.md).
 
 ### The first-install prompt
 
@@ -489,10 +490,32 @@ intentional divergences from tpm (real exit codes, visible
 non-executable-file warnings) — is in
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## License
+
+MIT — see [LICENSE](LICENSE). Security reports go through
+[SECURITY.md](SECURITY.md).
+
 ## For maintainers: publishing a snapshot
 
-This repo is a manual snapshot of the `tempo/` directory of a private
-development monorepo (where the compat suite and the vendored original
-live). To publish a new snapshot: run the monorepo gates (unit, flows,
-compat), copy the contents of `tempo/` over this repo's working tree,
-review the diff, commit, push. There is no publish automation by design.
+This repo is a manual snapshot of the `tempo/` directory of the development
+monorepo (which also holds the tpm compat suite and the vendored original).
+There is no publish automation, by design — a snapshot is a deliberate act:
+
+1. In the monorepo, run all three gates and make sure they are green:
+
+   ```sh
+   cd tempo && ruby -Ilib -Itest test/run_all.rb
+   sh tempo/test/flows/run_flows.sh
+   TPM_UNDER_TEST=./tempo ./compat-tests/run.sh
+   ```
+
+2. Copy the **contents** of `tempo/` over this repo's working tree (the
+   snapshot is byte-faithful to that tree at the gate-green commit; `tempo/`
+   contents land at the repo root).
+3. Review the diff in full, then commit and push.
+4. Tag releases here (`v1.0.0`, …) on the snapshot commit.
+
+The curated search index is a **separate** repo, `tmux-tempo-index`, and
+follows the same manual copy-review-commit rhythm: its reviewed source lives
+at `tools/tmux-tempo-index/` in the monorepo, and `search` reads it from
+`https://raw.githubusercontent.com/kurioscreative/tmux-tempo-index/main/index.json`.
