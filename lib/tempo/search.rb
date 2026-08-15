@@ -15,13 +15,13 @@ module Tempo
   # never-block-startup rule is enforced structurally by TASK-007's
   # criterion 5, not by convention.
   class Search
-    # Finalized at sign-off: the index repo is created by the maintainer, so
-    # OWNER below is a placeholder until the handle is confirmed.
+    # The public index repo (D21/D26). Its `main` branch is served raw, so a
+    # curated entry is live the moment it is merged there.
     #
-    # TEMPO_INDEX_URL overrides it. That variable is a *test seam* and the
-    # release-time switch — not a user-facing option — which is why it is
-    # documented here and deliberately absent from the README.
-    DEFAULT_INDEX_URL = "https://raw.githubusercontent.com/OWNER/tmux-tempo-index/main/index.json"
+    # TEMPO_INDEX_URL overrides it. That variable is a *test seam* — not a
+    # user-facing option — which is why it is documented here and deliberately
+    # absent from the README.
+    DEFAULT_INDEX_URL = "https://raw.githubusercontent.com/kurioscreative/tmux-tempo-index/main/index.json"
 
     # A constant, not an option (contract: cache TTL is a constant). A day is
     # long enough that a session's worth of searches never hits the network,
