@@ -181,6 +181,7 @@ module Tempo
 
         name = File.basename(dir).sub(/\.git\z/, "")
         next if name == "tpm" # never delete the manager's own install
+        next if own_install?(dir) # ...whatever it's named (D13; `init` links it as "tempo")
         next if declared.include?(name) # exact match (licensed drop of the substring quirk)
 
         ui.ok(%(Removing "#{name}"))
@@ -195,6 +196,14 @@ module Tempo
           ui.ok(%(  "#{name}" clean success))
         end
       end
+    end
+
+    # Glob yields the symlink path and rm_rf on a symlink removes the link,
+    # so this must fire before either; realpath both sides (macOS /tmp).
+    def own_install?(dir)
+      File.realpath(dir) == File.realpath(File.expand_path("../..", __dir__))
+    rescue Errno::ENOENT
+      false
     end
 
     def restore_locked(env, ui)

@@ -101,6 +101,24 @@ class TestCommands < Minitest::Test
     assert File.directory?(File.join(@plugins, "tmux-example-plugin"))
   end
 
+  # The negative pair for the own-install guard: the symlink at the real
+  # tempo source root must survive while the orphan beside it is removed —
+  # an over-broad guard fails one half, a missing guard the other.
+  def test_clean_spares_own_install_dir_whatever_its_name
+    env = env_for(@repo)
+    Tempo::Commands.install(env, capture_ui.first)
+    own_root = File.expand_path("..", __dir__)
+    File.symlink(own_root, File.join(@plugins, "tempo"))
+    FileUtils.mkdir_p(File.join(@plugins, "tmux-orphan"))
+
+    ui, out, = capture_ui
+    assert_equal 0, Tempo::Commands.clean(env_for(@repo), ui)
+    assert_includes out.string, %("tmux-orphan" clean success)
+    refute File.directory?(File.join(@plugins, "tmux-orphan"))
+    assert File.symlink?(File.join(@plugins, "tempo"))
+    refute_includes out.string, %(Removing "tempo")
+  end
+
   def test_clean_blocked_removal_fails
     env = env_for(@repo)
     blocked = File.join(@plugins, "tmux-blocked", "sub")
