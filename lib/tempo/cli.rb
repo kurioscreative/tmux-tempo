@@ -17,6 +17,7 @@ module Tempo
         generate [--force]      regenerate the loader artifact
         status                  declared plugins and lock state
         doctor                  check requirements, paths and artifact health
+        update-list             internal: plugin list behind the prefix+U prompt
 
       options: --tmux-echo   deliver output through `tmux run-shell echo`
                --frozen      (sync/restore) enforce the lockfile offline;
