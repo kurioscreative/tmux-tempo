@@ -243,6 +243,72 @@ flow_declared_plugin_suppresses_guidance() {
 	assert_not_contains "$out" "No plugins declared"
 }
 
+# Fresh-mode init from a checkout cloned anywhere: init writes the conf's
+# run line and the canonical symlink, then a real server must boot through
+# the whole new chain (run line → tempo alias → tpm entry →
+# TMUX_PLUGIN_MANAGER_PATH published) and install the declared plugin.
+flow_init_fresh() {
+	install_tempo_copy "$SANDBOX/checkout"
+	write_conf <<-EOF
+	set -g @plugin '$FIXTURES/tmux-example-plugin'
+	EOF
+	"$SANDBOX/checkout/bin/tempo" init >/dev/null 2>&1
+	rc=$?
+	[ "$rc" -eq 0 ] || fail "init exited $rc"
+	grep -q "run '~/.tmux/plugins/tempo/tempo'" "$HOME/.tmux.conf" || fail "run line missing from conf"
+	[ -L "$PLUGINS_DIR/tempo" ] || fail "manager symlink missing"
+	start_tmux || return 1
+	out="$("$PLUGINS_DIR/tempo/bin/install_plugins" 2>&1)"
+	rc=$?
+	[ "$rc" -eq 0 ] || fail "install_plugins exited $rc"
+	assert_contains "$out" '"tmux-example-plugin" download success'
+	assert_dir "$PLUGINS_DIR/tmux-example-plugin/.git"
+}
+
+# Drop-in init over a tpm-style sandbox: original backed up, tpm path now a
+# symlink into the checkout, conf byte-identical — and the untouched conf
+# still boots a working server that installs through the tpm path.
+flow_init_drop_in() {
+	install_tempo_copy "$SANDBOX/checkout"
+	mkdir -p "$PLUGINS_DIR/tpm"
+	touch "$PLUGINS_DIR/tpm/tpm"
+	write_conf <<-EOF
+	set -g @plugin '$FIXTURES/tmux-example-plugin'
+	run '~/.tmux/plugins/tpm/tpm'
+	EOF
+	cp "$HOME/.tmux.conf" "$SANDBOX/conf.before"
+	"$SANDBOX/checkout/bin/tempo" init >/dev/null 2>&1
+	rc=$?
+	[ "$rc" -eq 0 ] || fail "init exited $rc"
+	cmp -s "$HOME/.tmux.conf" "$SANDBOX/conf.before" || fail "drop-in mode changed the conf"
+	[ -L "$PLUGINS_DIR/tpm" ] || fail "tpm path is not a symlink"
+	ls -d "$PLUGINS_DIR/"tpm.orig* >/dev/null 2>&1 || fail "original tpm not backed up"
+	start_tmux || return 1
+	out="$("$PLUGINS_DIR/tpm/bin/install_plugins" 2>&1)"
+	rc=$?
+	[ "$rc" -eq 0 ] || fail "install_plugins exited $rc"
+	assert_contains "$out" '"tmux-example-plugin" download success'
+}
+
+# Clean after a fresh init must remove orphans but never the manager's own
+# symlink — its name is "tempo", so the literal tpm guard alone won't save it.
+flow_clean_after_fresh_init() {
+	install_tempo_copy "$SANDBOX/checkout"
+	write_conf <<-EOF
+	set -g @plugin '$FIXTURES/tmux-example-plugin'
+	EOF
+	"$SANDBOX/checkout/bin/tempo" init >/dev/null 2>&1 || fail "init failed"
+	start_tmux || return 1
+	"$PLUGINS_DIR/tempo/bin/install_plugins" >/dev/null 2>&1
+	mkdir -p "$PLUGINS_DIR/tmux-orphan"
+	out="$("$PLUGINS_DIR/tempo/bin/tempo" clean 2>&1)"
+	rc=$?
+	[ "$rc" -eq 0 ] || fail "clean exited $rc"
+	[ ! -d "$PLUGINS_DIR/tmux-orphan" ] || fail "orphan survived clean"
+	[ -L "$PLUGINS_DIR/tempo" ] || fail "clean removed the manager's own symlink"
+	assert_not_contains "$out" 'Removing "tempo"'
+}
+
 # --- runner ------------------------------------------------------------------
 
 run_test() {
@@ -267,7 +333,10 @@ for _test in \
 	flow_doctor_no_ruby_exits_1 \
 	flow_doctor_healthy \
 	flow_zero_plugin_guidance \
-	flow_declared_plugin_suppresses_guidance; do
+	flow_declared_plugin_suppresses_guidance \
+	flow_init_fresh \
+	flow_init_drop_in \
+	flow_clean_after_fresh_init; do
 	run_test "$_test"
 done
 
