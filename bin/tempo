@@ -3,7 +3,19 @@
 # or old Ruby it prints one clear message and does nothing else — exactly
 # the posture of the original's tmux version gate.
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Resolve $0's own symlink chain first, so a PATH symlink (e.g.
+# ~/.local/bin/tempo -> this file) still finds the checkout. Only the file
+# link is resolved — the logical cd+pwd below stays, so a symlinked install
+# *dir* keeps its logical path (flow_symlinked_install_dir pins this).
+self="$0"
+while [ -h "$self" ]; do
+	link="$(readlink "$self")"
+	case "$link" in
+		/*) self="$link" ;;
+		*) self="$(dirname "$self")/$link" ;;
+	esac
+done
+ROOT="$(cd "$(dirname "$self")/.." && pwd)"
 . "$ROOT/scripts/helpers.sh"
 
 if ! ruby_gate; then

@@ -239,6 +239,22 @@ flow_symlinked_install_dir() {
 	assert_dir "$PLUGINS_DIR/tmux-example-plugin/.git"
 }
 
+# bin/tempo reached through a PATH-style symlink (~/.local/bin/tempo).
+# ROOT must resolve the file's own link chain — one absolute and one
+# relative link cover both target forms — while the install dir itself
+# stays logical (the previous flow pins that half).
+flow_cli_via_path_symlink() {
+	install_tempo_copy "$PLUGINS_DIR/tpm"
+	touch "$HOME/.tmux.conf"
+	mkdir -p "$SANDBOX/bin"
+	ln -s "../home/.tmux/plugins/tpm/bin/tempo" "$SANDBOX/bin/tempo-rel"
+	ln -s "$SANDBOX/bin/tempo-rel" "$SANDBOX/bin/tempo"
+	out="$("$SANDBOX/bin/tempo" doctor 2>&1)"
+	rc=$?
+	[ "$rc" -eq 0 ] || { fail "doctor via PATH symlink exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
+	assert_contains "$out" "ruby"
+}
+
 # No usable Ruby: the sh gate must print one clear message to stderr and
 # exit 1 without doing anything else.
 flow_no_ruby_gate() {
@@ -610,6 +626,7 @@ for _test in \
 	flow_fresh_install \
 	flow_migration_existing_tree \
 	flow_symlinked_install_dir \
+	flow_cli_via_path_symlink \
 	flow_no_ruby_gate \
 	flow_doctor_no_ruby_exits_1 \
 	flow_doctor_healthy \
