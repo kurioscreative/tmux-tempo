@@ -13,9 +13,15 @@ module Tempo
   # - otherwise -> fresh: symlink <plugin-path>/tempo at this checkout and
   #   append the matching run line (creating a minimal config when none
   #   exists, backing up an existing one first).
+  #
+  # Consent before mutation: the full plan — every rename, symlink and
+  # config write, with final paths — is printed before anything happens,
+  # and on a TTY init asks before executing (--yes skips; non-interactive
+  # runs proceed). Each plan step pairs its printed description with the
+  # action that performs it, so what is shown and what runs cannot drift.
   class Init
-    def self.run(env, ui)
-      new(env, ui).run
+    def self.run(env, ui, yes: false)
+      new(env, ui).run(yes: yes)
     end
 
     def initialize(env, ui)
@@ -24,7 +30,7 @@ module Tempo
       @root = File.expand_path("../..", __dir__)
     end
 
-    def run
+    def run(yes: false)
       targets = run_line_targets
       if targets.any? { |t| resolves_into_checkout?(t) }
         @ui.ok("Already set up: a run line in your tmux config points at this checkout. Nothing to do.")
@@ -32,10 +38,95 @@ module Tempo
       end
 
       tpm_target = targets.find { |t| t.end_with?("/tpm/tpm") }
-      tpm_target ? drop_in(File.dirname(tpm_target)) : fresh
+      plan = tpm_target ? drop_in_plan(File.dirname(tpm_target)) : fresh_plan
+      return 1 unless plan # refusal already reported
+
+      steps, epilogue = plan
+      @ui.ok("tempo init will:")
+      steps.each { |desc, _action| @ui.ok("  - #{desc}") }
+      unless yes || confirmed?
+        @ui.ok("Aborted: nothing was changed.")
+        return 1
+      end
+
+      steps.each { |_desc, action| action.call }
+      @ui.ok("")
+      epilogue.each { |line| @ui.ok(line) }
+      0
     end
 
     private
+
+    # The config already runs `.../tpm/tpm`: take over that path. The
+    # config file is not touched; whatever occupies the path is renamed
+    # aside — backed up regardless of content, it's reversible. The no-op
+    # last step exists so the plan states the config promise explicitly.
+    def drop_in_plan(tpm_dir)
+      steps = []
+      if File.exist?(tpm_dir) || File.symlink?(tpm_dir)
+        backup = "#{tpm_dir}.orig-#{timestamp}"
+        steps << ["rename #{tpm_dir} -> #{backup} (backup, kept)",
+                  -> { File.rename(tpm_dir, backup) }]
+      end
+      steps << ["symlink #{tpm_dir} -> #{@root}", lambda do
+        FileUtils.mkdir_p(File.dirname(tpm_dir))
+        File.symlink(@root, tpm_dir)
+      end]
+      steps << ["not modify your tmux config", -> {}]
+      [steps, [
+        "Done (drop-in mode): your tmux config was not changed.",
+        "Reload tmux, then press prefix + I to install plugins.",
+      ]]
+    end
+
+    # Fresh mode's canonical location. Present-but-foreign contents are a
+    # refusal (nil), not a repair: exit 1 and touch nothing — the user
+    # parked something there on purpose.
+    def fresh_plan
+      link = File.join(@env.default_plugin_path, "tempo")
+      steps = []
+      if File.symlink?(link)
+        unless resolves_into_checkout?(link)
+          @ui.err("#{link} is a symlink to something else. Move it aside and re-run init.")
+          return nil
+        end
+      elsif File.exist?(link)
+        @ui.err("#{link} already exists and is not this checkout. Move it aside and re-run init.")
+        return nil
+      else
+        steps << ["symlink #{link} -> #{@root}", lambda do
+          FileUtils.mkdir_p(File.dirname(link))
+          File.symlink(@root, link)
+        end]
+      end
+
+      conf = @env.user_conf
+      line = "run '#{shorten_home(File.join(link, "tempo"))}'"
+      if !File.file?(conf)
+        steps << ["create #{conf} containing: #{line}",
+                  -> { write_minimal_conf(conf, line) }]
+      elsif !File.read(conf).include?(line)
+        backup = "#{conf}.bak-#{timestamp}"
+        # cp, not rename: a symlinked conf must stay a symlink
+        steps << ["copy #{conf} -> #{backup} (backup, kept)",
+                  -> { FileUtils.cp(conf, backup) }]
+        steps << ["append to #{conf}: #{line}",
+                  -> { append_run_line(conf, line) }]
+      end
+      [steps, [
+        "Done. Reload tmux (tmux source-file #{conf}), then press prefix + I to install plugins.",
+      ]]
+    end
+
+    # TTY-gated consent: scripts and CI (no TTY) proceed, matching the
+    # pre-prompt behavior the flows and acceptance gates pin.
+    def confirmed?
+      return true unless $stdin.tty?
+
+      $stdout.print("Proceed? [y/N] ")
+      $stdout.flush
+      $stdin.gets.to_s.strip.match?(/\Ay(es)?\z/i)
+    end
 
     # Every run/run-shell target in the config files, quotes stripped and
     # `~`/$HOME expanded. This parsing is init-only surface: the
@@ -65,80 +156,24 @@ module Tempo
       false
     end
 
-    # The config already runs `.../tpm/tpm`: take over that path. The
-    # config file is not touched; whatever occupies the path is renamed
-    # aside — backed up regardless of content, it's reversible.
-    def drop_in(tpm_dir)
-      if File.exist?(tpm_dir) || File.symlink?(tpm_dir)
-        backup = "#{tpm_dir}.orig-#{timestamp}"
-        File.rename(tpm_dir, backup)
-        @ui.ok("Backed up #{tpm_dir} -> #{backup}")
-      end
-      FileUtils.mkdir_p(File.dirname(tpm_dir))
-      File.symlink(@root, tpm_dir)
-      @ui.ok("Linked #{tpm_dir} -> #{@root}")
-      @ui.ok("")
-      @ui.ok("Done (drop-in mode): your tmux config was not changed.")
-      @ui.ok("Reload tmux, then press prefix + I to install plugins.")
-      0
-    end
-
-    def fresh
-      link = File.join(@env.default_plugin_path, "tempo")
-      return 1 unless ensure_link(link)
-
-      write_run_line(link)
-      @ui.ok("")
-      @ui.ok("Done. Reload tmux (tmux source-file #{@env.user_conf}), then press prefix + I to install plugins.")
-      0
-    end
-
-    # Fresh mode's canonical location. Present-but-foreign contents are a
-    # refusal, not a repair: exit 1 and touch nothing — the user parked
-    # something there on purpose.
-    def ensure_link(link)
-      if File.symlink?(link)
-        return true if resolves_into_checkout?(link)
-
-        @ui.err("#{link} is a symlink to something else. Move it aside and re-run init.")
-        false
-      elsif File.exist?(link)
-        @ui.err("#{link} already exists and is not this checkout. Move it aside and re-run init.")
-        false
-      else
-        FileUtils.mkdir_p(File.dirname(link))
-        File.symlink(@root, link)
-        @ui.ok("Linked #{link} -> #{@root}")
-        true
+    def append_run_line(conf, line)
+      File.open(conf, "a") do |f| # appending writes through a symlinked conf
+        f.puts("")
+        f.puts("# Initialize the plugin manager (keep this at the very bottom of the config).")
+        f.puts(line)
       end
     end
 
-    def write_run_line(link)
-      conf = @env.user_conf
-      line = "run '#{shorten_home(File.join(link, "tempo"))}'"
-      if File.file?(conf)
-        return @ui.ok("#{conf} already contains the run line.") if File.read(conf).include?(line)
+    def write_minimal_conf(conf, line)
+      FileUtils.mkdir_p(File.dirname(conf))
+      File.write(conf, <<~CONF)
+        # Created by `tempo init`. Declare plugins, then press prefix + I:
+        #
+        #   set -g @plugin 'tmux-plugins/tmux-sensible'
 
-        backup = "#{conf}.bak-#{timestamp}"
-        FileUtils.cp(conf, backup) # cp, not rename: a symlinked conf must stay a symlink
-        @ui.ok("Backed up #{conf} -> #{backup}")
-        File.open(conf, "a") do |f| # appending writes through a symlinked conf
-          f.puts("")
-          f.puts("# Initialize the plugin manager (keep this at the very bottom of the config).")
-          f.puts(line)
-        end
-      else
-        FileUtils.mkdir_p(File.dirname(conf))
-        File.write(conf, <<~CONF)
-          # Created by `tempo init`. Declare plugins, then press prefix + I:
-          #
-          #   set -g @plugin 'tmux-plugins/tmux-sensible'
-
-          # Initialize the plugin manager (keep this at the very bottom of the config).
-          #{line}
-        CONF
-      end
-      @ui.ok("Wrote #{line} to #{conf}")
+        # Initialize the plugin manager (keep this at the very bottom of the config).
+        #{line}
+      CONF
     end
 
     def shorten_home(path)

@@ -8,7 +8,7 @@ module Tempo
     USAGE = <<~TEXT
       usage: tempo <command> [args]
 
-        init                    set up tmux to use this checkout (drop-in for tpm)
+        init [--yes]            set up tmux to use this checkout (drop-in for tpm)
         install                 install declared plugins
         update all|<name>...    update plugins (parallel)
         clean                   remove undeclared plugin dirs
@@ -39,7 +39,7 @@ module Tempo
       when "status" then Commands.status(env, ui)
       when "update-list" then Commands.update_list(env, ui)
       when "doctor" then Doctor.run(env, ui)
-      when "init" then Init.run(env, ui)
+      when "init" then Init.run(env, ui, yes: !(args & ["--yes", "-y"]).empty?)
       else
         $stderr.puts(USAGE)
         1

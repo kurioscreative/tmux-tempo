@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "helper"
+require "pty"
+require "timeout"
 
 class TestInit < Minitest::Test
   include TempoTest
@@ -67,8 +69,9 @@ class TestInit < Minitest::Test
     File.write(conf, "set -g @plugin 'tmux-plugins/tmux-sensible'\nrun '~/.tmux/plugins/tpm/tpm'\n")
     before = File.read(conf)
 
-    rc, = run_init
+    rc, out, = run_init
     assert_equal 0, rc
+    assert_includes out, "not modify your tmux config" # the plan states the promise
     assert_equal before, File.read(conf)
     assert File.symlink?(tpm)
     assert_equal File.realpath(ROOT), File.realpath(tpm)
@@ -95,6 +98,48 @@ class TestInit < Minitest::Test
     assert_equal 0, rc
     assert_includes out, "Already set up"
     assert_equal after_first, File.read(conf)
+  end
+
+  # Consent surface: every mutation appears in the printed plan with its
+  # final path — including the backup name — before anything runs. (The
+  # TTY prompt itself is unreachable here: test stdin is never a TTY, so
+  # init auto-proceeds, which is also what the acceptance gates pin.)
+  def test_plan_lists_every_mutation_with_final_paths
+    File.write(conf, "set -g @plugin 'x'\n")
+    rc, out, = run_init
+    assert_equal 0, rc
+    assert_includes out, "tempo init will:"
+    assert_includes out, "symlink #{link}"
+    assert_includes out, "copy #{conf} -> #{Dir.glob("#{conf}.bak-*").first}"
+    assert_includes out, "append to #{conf}: run '~/.tmux/plugins/tempo/tempo'"
+  end
+
+  # The decline branch is unreachable without a TTY, so pin it through a
+  # real pty against the real bin. (Don't drive this with `script(1)`:
+  # macOS script forwards EOF ahead of piped input, so the answer never
+  # arrives — see NOTES.md.)
+  def test_interactive_decline_aborts_without_touching_anything
+    bin = File.expand_path("../bin/tempo", __dir__)
+    status = nil
+    buf = +""
+    Timeout.timeout(15) do
+      PTY.spawn({ "HOME" => @dir }, bin, "init") do |r, w, pid|
+        buf << r.readpartial(4096) until buf.include?("Proceed?")
+        w.write("n\n")
+        begin
+          loop { buf << r.readpartial(4096) }
+        rescue EOFError, Errno::EIO
+          nil
+        end
+        Process.wait(pid)
+        status = $?.exitstatus
+      end
+    end
+    assert_equal 1, status
+    assert_includes buf, "tempo init will:"
+    assert_includes buf, "Aborted: nothing was changed."
+    refute File.exist?(conf)
+    refute File.exist?(link)
   end
 
   def test_refuses_real_directory_at_canonical_path

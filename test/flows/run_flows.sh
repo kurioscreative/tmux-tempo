@@ -252,7 +252,7 @@ flow_init_fresh() {
 	write_conf <<-EOF
 	set -g @plugin '$FIXTURES/tmux-example-plugin'
 	EOF
-	"$SANDBOX/checkout/bin/tempo" init >/dev/null 2>&1
+	"$SANDBOX/checkout/bin/tempo" init --yes >/dev/null 2>&1
 	rc=$?
 	[ "$rc" -eq 0 ] || fail "init exited $rc"
 	grep -q "run '~/.tmux/plugins/tempo/tempo'" "$HOME/.tmux.conf" || fail "run line missing from conf"
