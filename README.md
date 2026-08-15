@@ -20,50 +20,99 @@ with tempo.
   Ruby 2.6 is not enough; install a current Ruby via Homebrew or a version
   manager.
 
-Not sure what you have? After installing, run
-`~/.tmux/plugins/tpm/bin/tempo doctor` (see Troubleshooting).
+Not sure what you have? After cloning, run `bin/tempo doctor` from the
+checkout (see Troubleshooting).
 
 ## Install
 
-Clone this repo where the tmux ecosystem hardcodes the plugin manager
-(yes, the directory is named `tpm` — every dotfiles snippet in the wild
-points there, and tempo impersonates that layout on purpose):
+Clone the repo anywhere you like, then let `tempo init` wire it in:
 
 ```sh
-git clone git@github.com:<your-github-username>/tmux-tempo.git ~/.tmux/plugins/tpm
+git clone git@github.com:<your-github-username>/tmux-tempo.git ~/.tmux/plugins/tempo-src
+cd ~/.tmux/plugins/tempo-src
+bin/tempo init
 ```
 
 While this repo is private, clone over SSH as above (HTTPS will prompt for
-credentials). Then make sure your tmux config declares plugins and runs the
-entry script — the standard tpm block, unchanged:
+credentials). The path is yours to choose — `~/.tmux/plugins/tempo-src`,
+`~/src/tmux-tempo`, a stow package, anywhere. `init` records where the
+checkout actually is.
+
+`init` **wires, it never installs**: no network, no git clones, no running
+tmux required. It reads your tmux config files (`~/.tmux.conf`, the XDG
+`~/.config/tmux/tmux.conf`, system configs), looks at their `run` /
+`run-shell` lines, and picks one of two modes:
+
+- **Drop-in mode** — your config already has a `run '~/.tmux/plugins/tpm/tpm'`
+  line (you are a tpm user). Whatever currently occupies
+  `~/.tmux/plugins/tpm` is **renamed aside** to `tpm.orig-<timestamp>`, and
+  `~/.tmux/plugins/tpm` becomes a symlink to your checkout. **Your tmux
+  config is not modified at all** — the existing run line now resolves into
+  tempo.
+- **Fresh mode** — no tpm run line found. `init` symlinks
+  `<plugin-path>/tempo` (`~/.tmux/plugins/tempo`, or
+  `~/.config/tmux/plugins/tempo` if you use an XDG config) at your checkout
+  and appends `run '~/.tmux/plugins/tempo/tempo'` to your tmux config. An
+  existing config is copied to `<conf>.bak-<timestamp>` first; if you have
+  no config at all, a minimal one is created (a commented `@plugin` example
+  plus the run line). An already-present run line is not duplicated.
+
+If a run line already resolves into this checkout, `init` prints
+`Already set up` and does nothing — it is idempotent, safe to re-run. In
+fresh mode, if `<plugin-path>/tempo` already exists as a real directory or
+as a symlink to something else, `init` **refuses**: it exits 1 with a
+message and touches nothing.
+
+Then declare plugins in your tmux config — the standard tpm block,
+unchanged:
 
 ```tmux
 set -g @plugin 'tmux-plugins/tmux-sensible'
 set -g @plugin 'tmux-plugins/tmux-resurrect'
 
 # keep this line at the very bottom of tmux.conf
-run '~/.tmux/plugins/tpm/tpm'
+run '~/.tmux/plugins/tempo/tempo'
 ```
 
 Reload tmux (`tmux source ~/.tmux.conf`) and press **`prefix` + `I`**
 (capital i) to install the declared plugins. A `tempo.lock` file appears
 next to your config file — commit it to your dotfiles.
 
-Installing into a symlinked directory (`~/.tmux/plugins/tpm` → a checkout
-elsewhere, as dotfiles managers like stow do) is supported and tested.
+### Alternative: clone straight to the tpm path
 
-## Migrating
-
-**From tpm**: replace the old clone and keep everything else.
+`init` is optional. You can still clone this repo where the tmux ecosystem
+hardcodes the plugin manager (yes, the directory is named `tpm` — every
+dotfiles snippet in the wild points there, and tempo impersonates that
+layout on purpose):
 
 ```sh
-rm -rf ~/.tmux/plugins/tpm
 git clone git@github.com:<your-github-username>/tmux-tempo.git ~/.tmux/plugins/tpm
 ```
 
+with the usual `run '~/.tmux/plugins/tpm/tpm'` line at the bottom of your
+config. Nothing else changes; the two layouts behave identically.
+
+Installing into a symlinked directory (`~/.tmux/plugins/tpm` → a checkout
+elsewhere, as dotfiles managers like stow do) is supported and tested —
+that is exactly the shape `init` creates.
+
+## Migrating
+
+**From tpm**: clone and run `init`. That is the whole migration.
+
+```sh
+git clone git@github.com:<your-github-username>/tmux-tempo.git ~/.tmux/plugins/tempo-src
+~/.tmux/plugins/tempo-src/bin/tempo init
+```
+
+`init` detects your existing `run '.../tpm/tpm'` line and takes drop-in
+mode: your old tpm clone is renamed to `~/.tmux/plugins/tpm.orig-<timestamp>`
+(kept, not deleted — the migration is reversible) and the tpm path is
+symlinked at the tempo checkout. No `rm -rf`, no config edits.
+
 Your already-installed plugins under `~/.tmux/plugins/` are adopted in
 place — the first `prefix + I` reports them as `Already installed` and
-snapshots them into `tempo.lock`. No plugin re-downloads, no config edits.
+snapshots them into `tempo.lock`. No plugin re-downloads.
 
 **From manual `run-shell` lines**: if your config loads plugins directly
 (e.g. `run-shell ~/clones/tmux-resurrect/resurrect.tmux`), switch each line
@@ -94,6 +143,7 @@ The same operations — and the new ones — are available from a shell:
 ```
 ~/.tmux/plugins/tpm/bin/tempo <command>
 
+  init         wire this checkout into your tmux setup
   install      install declared plugins
   update all   update plugins (parallel)
   clean        remove undeclared plugin dirs
@@ -141,6 +191,29 @@ untouched:
 ```sh
 rm -rf ~/.tmux/plugins/tpm ~/.local/share/tempo
 ```
+
+**Rolling back `tempo init`** — both modes are reversible, and `init` left
+you the pieces:
+
+- **Drop-in mode**: delete the symlink and restore the backup tpm clone.
+  Your config never changed, so it goes back to running tpm.
+
+  ```sh
+  rm ~/.tmux/plugins/tpm
+  mv ~/.tmux/plugins/tpm.orig-<timestamp> ~/.tmux/plugins/tpm
+  ```
+
+- **Fresh mode**: delete the symlink and drop the run line `init` appended
+  (or restore the whole config from `<conf>.bak-<timestamp>`).
+
+  ```sh
+  rm ~/.tmux/plugins/tempo
+  # then delete the `run '~/.tmux/plugins/tempo/tempo'` line from your config
+  ```
+
+Note that `tempo clean` never deletes the manager's own install directory,
+whatever it happens to be named — the guard resolves real paths, so a
+checkout symlinked in as `tempo`, `tpm`, or anything else is safe from it.
 
 To stop using plugins entirely, also remove the `@plugin` and `run` lines
 from your tmux config and delete `~/.tmux/plugins/` and `tempo.lock`.
