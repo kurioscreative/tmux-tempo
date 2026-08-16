@@ -9,6 +9,53 @@ path that runs zero Ruby and zero network.
 Your existing `.tmux.conf` does not change. If it worked with tpm, it works
 with tempo.
 
+## Why tempo over tpm
+
+Fair question — tpm is the original, it works, and it needs nothing but
+bash and git. If that is all you want, keep it; your config will not care.
+tempo exists for the day a plugin update breaks your setup, or a new
+machine needs your exact plugin set back. What it adds and what it costs:
+
+| What                        | tempo                                                         | tpm                                 | the honest cost                                                                |
+| --------------------------- | ------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------ |
+| Config lines & key bindings | same as tpm                                                   | —                                   | none: that is the point                                                        |
+| Reproducible plugin sets    | `tempo.lock` (exact commits), `sync`, `sync --frozen`         | no                                  | one more file to commit to your dotfiles                                       |
+| Undo a bad update           | `rollback` — offline, instant, 10 generations kept            | re-clone by hand                    | a floor of superseded clones kept on disk per plugin (bounded, then reclaimed) |
+| Failure reporting           | real exit codes, `doctor`, `status`                           | exit 0 no matter what               | a script that relied on tpm always exiting 0 needs a look                      |
+| Finding/declaring plugins   | `search`, `add`, `remove` from the CLI                        | edit the config by hand             | search reads a small curated index, not a registry of everything               |
+| New-source trust gate       | first-install prompt, per host (CLI only)                     | none                                | `prefix + I` stays ungated for tpm parity — see Security                       |
+| Runtime dependencies        | sh + git, **Ruby ≥ 3.0 for management operations**            | bash + git only                     | the Ruby dependency is real; tpm's absence of it is a genuine tpm advantage    |
+| Startup (every reload)      | executes one pregenerated `sh` artifact                       | re-parses config, re-queries tmux   | tempo's parsing cost moves to config-change time and is paid in Ruby (below)   |
+| Field history               | new in 2026, pinned to tpm by a 29-test held-out compat suite | the original, ~a decade in the wild | maturity favors tpm; the compat suite is the mitigation, not a substitute      |
+
+### Measured
+
+Median of 12 runs each, 10 minimal local plugins, Apple Silicon macOS
+(arm64), tmux 3.7b, Ruby 3.4.5, 2026-08. Produced by
+`tools/bench-tpm-comparison.sh` in the development monorepo, which runs
+both managers against identical offline sandboxes with the vendored
+original tpm as the comparator, and prints every raw sample alongside the
+median — re-run it rather than trusting this table.
+
+| Moment                       | tempo   | tpm     | reading                                                                                         |
+| ---------------------------- | ------- | ------- | ----------------------------------------------------------------------------------------------- |
+| steady-state reload          | 197 ms  | 205 ms  | effectively a tie at this plugin count — the plugins themselves dominate both (see below)       |
+| reload after a config change | 369 ms  | 195 ms  | **tpm wins this moment**: tempo regenerates its artifact in Ruby, ~170 ms, once per config edit |
+| cold install of 10 plugins   | 1951 ms | 1209 ms | **tpm wins this moment**: tempo spends ~0.7 s filing the store, lockfile and generation         |
+
+Read the reload row for what it is, not as a speedup: roughly 180 ms of
+both medians is the ten plugins themselves running, identically under
+either manager. The difference is what the manager's own slice is made
+of. tpm re-derives the plugin list every reload — shell out to tmux,
+`awk` over the config — so its overhead grows with config complexity and
+runs code at every startup. tempo's steady-state overhead is a freshness
+check (a few `stat` calls, two tmux queries) plus one generated
+straight-line `sh` file: no parsing, no Ruby, no network, whatever your
+config looks like. The deferred cost surfaces in the other two rows, and
+they are tpm wins: tempo's install and config-change moments pay for the
+lockfile, the store and rollback. If you reload rarely and never want
+`sync` or `rollback`, that trade is against you — use tpm.
+
 ## Requirements
 
 - **tmux ≥ 1.9** — same floor as tpm.
