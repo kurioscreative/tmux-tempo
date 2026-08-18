@@ -542,13 +542,17 @@ non-executable-file warnings) — is in
 MIT — see [LICENSE](LICENSE). Security reports go through
 [SECURITY.md](SECURITY.md).
 
-## For maintainers: publishing a snapshot
+## For maintainers: publishing
 
-This repo is a manual snapshot of the `tempo/` directory of the development
-monorepo (which also holds the tpm compat suite and the vendored original).
-There is no publish automation, by design — a snapshot is a deliberate act:
+This repo's history is a deterministic subtree split of the `tempo/`
+directory of the development monorepo (which also holds the tpm compat
+suite and the vendored original): every monorepo commit that touched
+`tempo/`, re-rooted so its contents sit at this repo's root. Publishing is
+still a deliberate act — a script builds and verifies the split locally,
+and pushing is a separate explicit step:
 
-1. In the monorepo, run all three gates and make sure they are green:
+1. In the monorepo, run all three gates and make sure they are green
+   (they sandbox tmux; run them per the monorepo's isolation notes):
 
    ```sh
    cd tempo && ruby -Ilib -Itest test/run_all.rb
@@ -556,11 +560,18 @@ There is no publish automation, by design — a snapshot is a deliberate act:
    TPM_UNDER_TEST=./tempo ./compat-tests/run.sh
    ```
 
-2. Copy the **contents** of `tempo/` over this repo's working tree (the
-   snapshot is byte-faithful to that tree at the gate-green commit; `tempo/`
-   contents land at the repo root).
-3. Review the diff in full, then commit and push.
-4. Tag releases here (`v1.0.0`, …) on the snapshot commit.
+2. `sh tools/publish-tempo.sh` (in the monorepo) — splits, maps author
+   identities to the public handle, verifies the published tree is
+   byte-identical to `tempo/` at HEAD, and lists the commits that would
+   go out.
+3. Review that list, then `sh tools/publish-tempo.sh --push`. Re-running
+   on extended history fast-forwards; the push refuses to clobber unseen
+   remote work.
+4. Tag releases here (`v1.0.0`, …) on the published commit.
+
+Consequence to respect: because history is published, anything ever
+committed under `tempo/` is published forever — commits touching `tempo/`
+must be publishable as written, messages included.
 
 The curated search index is a **separate** repo, `tmux-tempo-index`, and
 follows the same manual copy-review-commit rhythm: its reviewed source lives
