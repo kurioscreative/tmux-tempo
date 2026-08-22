@@ -18,7 +18,6 @@ module Tempo
         generate                regenerate the loader artifact
         status                  declared plugins, lock state and generations
         doctor                  check requirements, paths and artifact health
-        update-list             internal: plugin list behind the prefix+U prompt
 
       options: --tmux-echo   deliver output through `tmux run-shell echo`
                --frozen      (install) enforce the lockfile offline;
@@ -61,6 +60,7 @@ module Tempo
       when "generate" then Commands.generate(env)
       when "rollback" then Commands.rollback(env, ui, args)
       when "status" then Commands.status(env, ui)
+      # Not in USAGE: an internal call from bindings/update_plugins, never typed.
       when "update-list" then Commands.update_list(env, ui)
       when "doctor" then Doctor.run(env, ui)
       when "init" then Init.run(env, ui, yes: yes)
