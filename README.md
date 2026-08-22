@@ -195,12 +195,12 @@ The same operations — and the new ones — are available from a shell:
 ~/.tmux/plugins/tpm/bin/tempo <command>
 
   init         wire this checkout into your tmux setup
-  install      install declared plugins
+  install      install declared plugins that are missing (tpm-compatible)
   add <spec>   declare a plugin in your config, then install it
   remove       delete a plugin's declaration from your config
   update all   update plugins (parallel)
   clean        remove undeclared plugin dirs
-  sync         install missing + restore locked commits + clean
+  sync         install missing + enforce the lock + clean
                (--frozen: enforce the lock offline, never write it)
   restore      put every plugin back on its locked commit
                (--frozen: as above, without installing or cleaning)
@@ -209,6 +209,14 @@ The same operations — and the new ones — are available from a shell:
   generate     regenerate the loader artifact
   doctor       check requirements, paths and artifact health
 ```
+
+**`install` vs `sync`** — worth knowing, because most package managers spell
+it the other way round. `install` behaves exactly like tpm's: it clones what
+is missing and leaves everything else alone, so a plugin already on disk is
+never moved, whatever `tempo.lock` says. `sync` is the reconciling one — it
+installs what is missing, moves installed plugins onto their locked commits,
+and removes undeclared ones. Reproducing a committed lockfile on a new
+machine is `sync`, not `install`.
 
 ### Adding and removing plugins
 

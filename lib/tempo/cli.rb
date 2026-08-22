@@ -9,12 +9,12 @@ module Tempo
       usage: tempo <command> [args]
 
         init [--yes]            set up tmux to use this checkout (drop-in for tpm)
-        install                 install declared plugins
+        install                 install declared plugins that are missing
         add <spec>              declare a plugin in your config, then install it
         remove <name>           delete a plugin's declaration from your config
         update all|<name>...    update plugins (parallel)
         clean                   remove undeclared plugin dirs
-        sync [--frozen]         install missing + restore locked + clean
+        sync [--frozen]         install missing + enforce the lock + clean
         restore [--frozen]      put every plugin back on its locked commit
         rollback [N]            undo: flip back to the previous generation (or N)
         generate [--force]      regenerate the loader artifact
