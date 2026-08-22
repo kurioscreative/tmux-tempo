@@ -6,8 +6,10 @@ path — plus the things tpm never grew: a **lockfile** for reproducible
 plugin sets, **real exit codes**, a **`doctor`** command, and a startup hot
 path that runs zero Ruby and zero network.
 
-Your existing `.tmux.conf` does not change. If it worked with tpm, it works
-with tempo.
+Your existing `.tmux.conf` does not change — same `@plugin` lines, same
+`run` line, same keys. One behavior differs on purpose: `prefix` + `I`
+reconciles against the lockfile instead of only adding. See
+[Usage](#usage).
 
 ## Why tempo over tpm
 
@@ -18,10 +20,11 @@ machine needs your exact plugin set back. What it adds and what it costs:
 
 | What                        | tempo                                                         | tpm                                 | the honest cost                                                                |
 | --------------------------- | ------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------ |
-| Config lines & key bindings | same as tpm                                                   | —                                   | none: that is the point                                                        |
+| Config lines & key bindings | same `@plugin` lines, same `run` line, same keys               | —                                   | none: that is the point (what the keys *do* is the row below)                  |
 | Reproducible plugin sets    | `tempo.lock` (exact commits), enforced by `install`            | no                                  | one more file to commit to your dotfiles                                       |
 | Undo a bad update           | `rollback` — offline, instant, 10 generations kept            | re-clone by hand                    | a floor of superseded clones kept on disk per plugin (bounded, then reclaimed) |
 | Failure reporting           | real exit codes, `doctor`, `status`                           | exit 0 no matter what               | a script that relied on tpm always exiting 0 needs a look                      |
+| `prefix + I` semantics      | reconciles: adds, enforces the lock, removes undeclared       | adds only — it has no lock to enforce | **the one binding that behaves differently**: a plugin you updated by hand goes back to its locked commit |
 | Declaring plugins           | `add`, `remove` from the CLI                                  | edit the config by hand             | none: the config file is still the manifest, and hand-editing still works      |
 | Runtime dependencies        | sh + git, **Ruby ≥ 3.0 for management operations**            | bash + git only                     | the Ruby dependency is real; tpm's absence of it is a genuine tpm advantage    |
 | Startup (every reload)      | executes one pregenerated `sh` artifact                       | re-parses config, re-queries tmux   | tempo's parsing cost moves to config-change time and is paid in Ruby (below)   |
@@ -182,10 +185,12 @@ written next to the real file — inside the repo, where you can commit it.
 
 ## Usage
 
-Key bindings (identical to tpm, overridable via `@tpm-install`,
-`@tpm-update`, `@tpm-clean`):
+Same keys as tpm, overridable via `@tpm-install`, `@tpm-update`,
+`@tpm-clean`:
 
-- `prefix` + `I` — install declared plugins
+- `prefix` + `I` — install missing, put installed plugins on their locked
+  commits, remove undeclared ones (see below — this is the one binding whose
+  behavior differs from tpm's)
 - `prefix` + `U` — update plugins (prompts: a name, or `all`)
 - `prefix` + `alt` + `u` — remove plugins no longer in the config
 
@@ -380,17 +385,18 @@ frozen: lockfile not satisfied
 
 The fix is a plain `bin/tempo install`, which is allowed to download.
 
-Unrecognized flags are a usage error everywhere (`--frozen` on `install`
-included — installing is a network operation by definition), so a typo
-fails loudly instead of being ignored.
+Unrecognized flags are a usage error everywhere — `--frozen` on `update`
+included, since updating is a network operation by definition — so a typo
+fails loudly instead of being quietly ignored.
 
 ## Security
 
 Installing a tmux plugin means running someone else's code with your
 privileges, and tempo does not sandbox it. Nothing prompts you before an
-install either: `prefix + I` is pinned to behave exactly like tpm, so a
-confirmation could only ever cover the CLI, and a per-URL approval gates the
-source rather than the code. The lockfile is the real defense — it pins exact
+install either: a per-URL approval gates the *source*, not the code — it
+approves every commit ever fetched from that repository afterwards — and on
+the path that matters it would be asking you to confirm a URL you typed into
+your own config moments earlier. The lockfile is the real defense — it pins exact
 commits, `install --frozen` refuses to move off them, and every change shows up
 in your dotfiles diff. What that does and does not protect against is spelled
 out in [THREAT-MODEL.md](THREAT-MODEL.md); to report a vulnerability in tempo
@@ -409,7 +415,9 @@ Common first-run cases it (or the install output) explains:
 
 - **"No plugins declared"** — your config has no `@plugin` lines, or tmux
   is reading a different config file than you edited (doctor lists the
-  candidates it checked).
+  candidates it checked). Your installed plugins are safe: `install`
+  deliberately skips its clean step when nothing is declared, precisely
+  because this case is usually a config tmux never read.
 - **"tempo requires Ruby >= 3.0"** — management operations are gated; see
   Requirements. Already-installed plugins keep loading without Ruby.
 
@@ -461,9 +469,9 @@ start just executes that artifact. Plugins themselves are stored once per
 which is what makes updates and rollbacks link flips. `install` and `update`
 are the only commands that touch the network at all — starting tmux never
 does, and neither does anything else. The full walkthrough —
-hot path, management plane, the store, lockfile semantics, and the
-intentional divergences from tpm (real exit codes, visible
-non-executable-file warnings) — is in
+hot path, management plane, the store, lockfile semantics, and the five
+intentional divergences from tpm (a reconciling `install`, real exit codes,
+visible non-executable-file warnings, and two smaller ones) — is in
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## License
@@ -480,13 +488,15 @@ suite and the vendored original): every monorepo commit that touched
 still a deliberate act — a script builds and verifies the split locally,
 and pushing is a separate explicit step:
 
-1. In the monorepo, run all three gates and make sure they are green
-   (they sandbox tmux; run them per the monorepo's isolation notes):
+1. In the monorepo, run all three gates and make sure they are green. The
+   `env -u` prefix is not optional — without it a suite run from inside tmux
+   inherits `TMUX_PLUGIN_MANAGER_PATH` and deletes your real plugin links:
 
    ```sh
-   cd tempo && ruby -Ilib -Itest test/run_all.rb
-   sh tempo/test/flows/run_flows.sh
-   TPM_UNDER_TEST=./tempo ./compat-tests/run.sh
+   ISO="env -u TMUX -u TMUX_PANE -u TMUX_PLUGIN_MANAGER_PATH TMUX_TMPDIR=$(mktemp -d)"
+   (cd tempo && $ISO ruby -Ilib -Itest test/run_all.rb)
+   $ISO sh tempo/test/flows/run_flows.sh
+   $ISO TPM_UNDER_TEST=./tempo ./compat-tests/run.sh
    ```
 
 2. `sh tools/publish-tempo.sh` (in the monorepo) — splits, maps author

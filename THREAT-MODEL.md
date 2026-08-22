@@ -73,9 +73,11 @@ about code you chose to run.
 ## There is no install-time confirmation prompt
 
 tempo does not ask you to approve a source before cloning it, and adding one
-would not buy much: `prefix + I` and the compat `bin/install_plugins` scripts
-are pinned to behave exactly like tpm, so any prompt would have to skip the
-path nearly everyone installs through. A prompt on the remaining path would
+would not buy much. `prefix + I` runs inside a tmux `run-shell` with no
+terminal on stdin, and the compat `bin/install_plugins` scripts exist to be
+called from provisioning — both are non-interactive by construction, so any
+prompt would skip the path nearly everyone installs through. A prompt on the
+remaining path would
 be asking you to confirm a URL you typed into your own config seconds
 earlier, which trains a reflex rather than a decision. And a per-URL approval
 gates the source, never the code: approving a repository once approves every
