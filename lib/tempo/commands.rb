@@ -29,13 +29,31 @@ module Tempo
 
     module_function
 
-    def install(env, ui)
+    # install = clone what is missing + put installed plugins on their locked
+    # commits + remove undeclared ones (D32). tpm's install could only ever do
+    # the first of those because a directory's existence was the only desired
+    # state it had; with a lockfile, enforcing it is what `install` means
+    # everywhere else (npm, bundler, poetry), and a lock that the gesture
+    # everyone uses never consults is a lock that does nothing.
+    #
+    # `--frozen` is the `cargo --locked` posture instead: prove the lock is
+    # satisfiable from what is already on disk, enforce it offline, and never
+    # write the lock back.
+    def install(env, ui, frozen: false)
+      return frozen_enforce(env, ui) if frozen
+
       prepare_path(env, ui, verify_writable: true)
       Store.adopt(env, ui)
       if env.specs.empty?
+        # Nothing declared nearly always means tmux read a different config
+        # than the user edited (the case doctor's `configs:` line exists for),
+        # so cleaning here would delete every plugin over a typo. Explicit
+        # `tempo clean` still does it; a keystroke must not.
         ui.ok(ZERO_PLUGIN_GUIDANCE)
       else
         install_missing(env, ui)
+        restore_locked(env, ui)
+        clean_undeclared(env, ui)
       end
       finalize(env, "install")
       ui.exit_code
@@ -67,42 +85,6 @@ module Tempo
     def generate(env, _ui = nil)
       Generator.new(env).generate
       0
-    end
-
-    # sync = install missing + check out locked commits + clean undeclared
-    # (D5). The final lock rewrite snapshots the now-enforced disk state.
-    # `--frozen` is the `cargo --locked` posture instead: prove the lock is
-    # satisfiable from what is already on disk, enforce it offline, and
-    # never write the lock back.
-    def sync(env, ui, frozen: false)
-      return frozen_enforce(env, ui, clean: true) if frozen
-
-      prepare_path(env, ui, verify_writable: true)
-      Store.adopt(env, ui)
-      install_missing(env, ui)
-      restore_locked(env, ui)
-      clean_undeclared(env, ui)
-      finalize(env, "sync")
-      ui.exit_code
-    end
-
-    # restore = the locked-commits part of sync, alone. Under the store this is
-    # a link flip onto the entry holding the locked commit, so the resulting
-    # HEAD is whatever that entry carries — attached when the entry came from a
-    # clone, detached when it had to be built by checkout. What restore
-    # promises is the commit, never the shape of HEAD. `update` moves the lock
-    # forward.
-    def restore(env, ui, frozen: false)
-      return frozen_enforce(env, ui, clean: false) if frozen
-
-      Store.adopt(env, ui)
-      restore_locked(env, ui)
-      Generator.new(env).generate
-      # restore and the frozen paths never write the lock, so their generation
-      # snapshots the *enforced* state carrying the lock content they were
-      # handed — which is exactly what rolling back to it should reproduce.
-      Generations.file(env, "restore")
-      ui.exit_code
     end
 
     # The undo for a bad `prefix + U`. Bare = the generation below the current
@@ -289,7 +271,7 @@ module Tempo
     # not the clones, not the lock, not the artifact — unless the whole lock
     # is satisfiable from local objects. Partial enforcement of a broken
     # lock is worse than no enforcement.
-    def frozen_enforce(env, ui, clean:)
+    def frozen_enforce(env, ui)
       violations = frozen_violations(env)
       unless violations.empty?
         ui.err("frozen: lockfile not satisfied")
@@ -298,9 +280,11 @@ module Tempo
       end
 
       restore_locked(env, ui, frozen: true)
-      clean_undeclared(env, ui) if clean # local-only, so frozen still runs it
+      # Local-only, so frozen still runs it — but an empty declared set means a
+      # config tmux never read, not "delete everything" (see `install`).
+      clean_undeclared(env, ui) unless env.specs.empty?
       Generator.new(env).generate # the hot path must reflect enforced disk
-      Generations.file(env, clean ? "sync-frozen" : "restore-frozen")
+      Generations.file(env, "install-frozen")
       ui.exit_code
     end
 

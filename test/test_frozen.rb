@@ -60,7 +60,7 @@ class TestFrozen < Minitest::Test
     cut_the_network
 
     ui, _, err = capture_ui
-    assert_equal 0, Tempo::Commands.sync(env_for(@repo), ui, frozen: true)
+    assert_equal 0, Tempo::Commands.install(env_for(@repo), ui, frozen: true)
     assert_empty err.string
     refute File.directory?(File.join(@plugins, "tmux-orphan")), "clean must still run under frozen"
     assert File.file?(artifact_path), "frozen must regenerate the artifact"
@@ -74,10 +74,10 @@ class TestFrozen < Minitest::Test
     rewrite_lock { |_plugins, doc| doc["note"] = "sentinel" }
     cut_the_network
 
-    assert_equal 0, Tempo::Commands.sync(env_for(@repo), capture_ui.first, frozen: true)
+    assert_equal 0, Tempo::Commands.install(env_for(@repo), capture_ui.first, frozen: true)
     assert_includes File.read(lockfile_path), "sentinel"
 
-    assert_equal 0, Tempo::Commands.sync(env_for(@repo), capture_ui.first)
+    assert_equal 0, Tempo::Commands.install(env_for(@repo), capture_ui.first)
     refute_includes File.read(lockfile_path), "sentinel"
   end
 
@@ -97,22 +97,10 @@ class TestFrozen < Minitest::Test
     cut_the_network
 
     ui, out, err = capture_ui
-    assert_equal 0, Tempo::Commands.sync(env_for(@repo), ui, frozen: true)
+    assert_equal 0, Tempo::Commands.install(env_for(@repo), ui, frozen: true)
     assert_empty err.string
     assert_includes out.string, %("tmux-alpha" restored to #{locked[0, 12]})
     assert_equal locked, Tempo::Git.head_commit(plugin_dir("tmux-alpha"))
-  end
-
-  # restore --frozen is sync --frozen minus the clean: orphans survive.
-  def test_frozen_restore_enforces_without_cleaning
-    Tempo::Commands.install(env_for(@repo), capture_ui.first)
-    FileUtils.mkdir_p(File.join(@plugins, "tmux-orphan"))
-    cut_the_network
-
-    ui, _, err = capture_ui
-    assert_equal 0, Tempo::Commands.restore(env_for(@repo), ui, frozen: true)
-    assert_empty err.string
-    assert File.directory?(File.join(@plugins, "tmux-orphan"))
   end
 
   # --- violations ------------------------------------------------------
@@ -139,7 +127,7 @@ class TestFrozen < Minitest::Test
     # tmux-bravo is declared but was never installed.
     specs = installed + [File.join(@dir, "fixtures", "tmux-bravo")]
     ui, out, err = capture_ui
-    assert_equal 1, Tempo::Commands.sync(env_for(*specs), ui, frozen: true)
+    assert_equal 1, Tempo::Commands.install(env_for(*specs), ui, frozen: true)
 
     assert_includes err.string, %("tmux-bravo" not installed)
     assert_includes err.string, %("tmux-charlie" not in the lockfile)
@@ -162,22 +150,16 @@ class TestFrozen < Minitest::Test
     cut_the_network
 
     ui, _, err = capture_ui
-    assert_equal 1, Tempo::Commands.sync(env_for(@repo, bravo), ui, frozen: true)
+    assert_equal 1, Tempo::Commands.install(env_for(@repo, bravo), ui, frozen: true)
     assert_includes err.string, %("tmux-alpha" not in the lockfile)
     assert_includes err.string, %("tmux-bravo" not in the lockfile)
     refute File.file?(lockfile_path), "a failed frozen run must not create the lock"
   end
 
-  def test_frozen_restore_also_refuses_a_violating_tree
-    ui, _, err = capture_ui
-    assert_equal 1, Tempo::Commands.restore(env_for(@repo), ui, frozen: true)
-    assert_includes err.string, %("tmux-alpha" not installed)
-  end
-
   # Duplicate declarations collapse, mirroring Lockfile.write's guard.
   def test_duplicate_specs_report_once
     ui, _, err = capture_ui
-    assert_equal 1, Tempo::Commands.sync(env_for(@repo, @repo), ui, frozen: true)
+    assert_equal 1, Tempo::Commands.install(env_for(@repo, @repo), ui, frozen: true)
     assert_equal 1, err.string.scan(%("tmux-alpha" not installed)).size
   end
 end
@@ -199,18 +181,17 @@ class TestFlagParsing < Minitest::Test
     assert_includes err, "usage:"
   end
 
-  # The paired negative: --frozen is real, but only on sync/restore.
-  # install and update are inherently network operations (out of scope).
+  # The paired negative: --frozen is real, but only on install. `update` is
+  # inherently a network operation and `clean` never consults the lock.
   def test_frozen_is_rejected_on_commands_that_do_not_have_it
-    assert_equal 1, run_cli("install", "--frozen").first
     assert_equal 1, run_cli("clean", "--frozen").first
     assert_equal 1, run_cli("status", "--frozen").first
+    assert_equal 1, run_cli("rollback", "--frozen").first
   end
 
-  def test_usage_advertises_frozen_on_sync_and_restore
+  def test_usage_advertises_frozen_on_install
     usage = Tempo::CLI::USAGE.lines
-    assert usage.any? { |l| l.include?("sync") && l.include?("frozen") }
-    assert usage.any? { |l| l.include?("restore") && l.include?("frozen") }
+    assert usage.any? { |l| l.include?("install") && l.include?("frozen") }
   end
 
   # Update's tokens are prompt data by contract, never flag-checked; the

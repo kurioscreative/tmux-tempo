@@ -52,7 +52,7 @@ class TestLockfile < Minitest::Test
   # entry in place is the one thing the design forbids. The lock is then put
   # back by hand, because the situation being tested is a committed lock that
   # disk has run ahead of.
-  def test_restore_returns_disk_to_the_locked_commit
+  def test_install_returns_disk_to_the_locked_commit
     install(env_for(@repo))
     lock_path = File.join(@dir, "tempo.lock")
     locked = Tempo::Lockfile.read(lock_path).dig("tmux-example-plugin", "commit")
@@ -65,12 +65,12 @@ class TestLockfile < Minitest::Test
     refute_equal locked, git(dir, "rev-parse", "HEAD").strip
 
     ui, out, = capture_ui
-    assert_equal 0, Tempo::Commands.restore(env_for(@repo), ui)
+    assert_equal 0, Tempo::Commands.install(env_for(@repo), ui)
     assert_equal locked, git(dir, "rev-parse", "HEAD").strip
     assert_includes out.string, %("tmux-example-plugin" restored to #{locked[0, 12]})
   end
 
-  def test_sync_installs_missing_restores_and_cleans
+  def test_install_adds_missing_enforces_the_lock_and_cleans
     install(env_for(@repo))
     lock_path = File.join(@dir, "tempo.lock")
     locked = Tempo::Lockfile.read(lock_path).dig("tmux-example-plugin", "commit")
@@ -81,7 +81,7 @@ class TestLockfile < Minitest::Test
     add_upstream_commit(@repo)
 
     ui, out, = capture_ui
-    assert_equal 0, Tempo::Commands.sync(env_for(@repo), ui)
+    assert_equal 0, Tempo::Commands.install(env_for(@repo), ui)
     dir = File.join(@plugins, "tmux-example-plugin")
     assert_equal locked, git(dir, "rev-parse", "HEAD").strip,
                  "sync must check out the locked commit, not upstream HEAD"

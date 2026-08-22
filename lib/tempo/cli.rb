@@ -9,13 +9,11 @@ module Tempo
       usage: tempo <command> [args]
 
         init [--yes]            set up tmux to use this checkout (drop-in for tpm)
-        install                 install declared plugins that are missing
+        install [--frozen]      install missing + enforce the lock + clean
         add <spec>              declare a plugin in your config, then install it
         remove <name>           delete a plugin's declaration from your config
         update all|<name>...    update plugins (parallel)
         clean                   remove undeclared plugin dirs
-        sync [--frozen]         install missing + enforce the lock + clean
-        restore [--frozen]      put every plugin back on its locked commit
         rollback [N]            undo: flip back to the previous generation (or N)
         generate [--force]      regenerate the loader artifact
         status                  declared plugins, lock state and generations
@@ -23,19 +21,18 @@ module Tempo
         update-list             internal: plugin list behind the prefix+U prompt
 
       options: --tmux-echo   deliver output through `tmux run-shell echo`
-               --frozen      (sync/restore) enforce the lockfile offline;
+               --frozen      (install) enforce the lockfile offline;
                              fails if it is not satisfiable, never writes it
                --yes, -y     (init) skip the confirmation prompt
     TEXT
 
     # Flags each subcommand accepts, on top of the global --tmux-echo.
     # Anything else is a usage error: silently swallowing unknown flags is
-    # exactly what let `sync --frozen` be a no-op that reported success.
+    # exactly what let `--frozen` be a no-op that reported success.
     FLAGS = {
       "init" => ["--yes", "-y"],
       "generate" => ["--force"],
-      "sync" => ["--frozen"],
-      "restore" => ["--frozen"],
+      "install" => ["--frozen"],
     }.freeze
 
     YES = ["--yes", "-y"].freeze
@@ -57,14 +54,12 @@ module Tempo
       ui = UI.new(tmux_echo: tmux_echo)
 
       case command
-      when "install" then Commands.install(env, ui)
+      when "install" then Commands.install(env, ui, frozen: frozen)
       when "add" then ConfigEdit.add(env, ui, args)
       when "remove" then ConfigEdit.remove(env, ui, args)
       when "update" then Commands.update(env, ui, args)
       when "clean" then Commands.clean(env, ui)
       when "generate" then Commands.generate(env)
-      when "sync" then Commands.sync(env, ui, frozen: frozen)
-      when "restore" then Commands.restore(env, ui, frozen: frozen)
       when "rollback" then Commands.rollback(env, ui, args)
       when "status" then Commands.status(env, ui)
       when "update-list" then Commands.update_list(env, ui)

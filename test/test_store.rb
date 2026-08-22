@@ -129,7 +129,7 @@ class TestStore < Minitest::Test
   # Restore is a flip: it lands on the entry that already holds the locked
   # commit and mutates nothing at all — not the entry it leaves, not the one
   # it arrives at, and it files nothing new.
-  def test_restore_flips_to_the_locked_entry_without_mutating_any_entry
+  def test_install_flips_to_the_locked_entry_without_mutating_any_entry
     install(@repo)
     entry_before = File.realpath(plugin_dir)
     lock_path = File.join(@dir, "tempo.lock")
@@ -142,7 +142,7 @@ class TestStore < Minitest::Test
     heads_before = entry_heads
 
     ui, out, = capture_ui
-    assert_equal 0, Tempo::Commands.restore(env_for(@repo), ui)
+    assert_equal 0, Tempo::Commands.install(env_for(@repo), ui)
     assert_includes out.string, %("tmux-alpha" restored to)
     assert_equal entry_before, File.realpath(plugin_dir), "restore must flip back to the filed entry"
     assert_equal heads_before, entry_heads, "no entry may move during a restore"
@@ -179,7 +179,7 @@ class TestStore < Minitest::Test
     FileUtils.mkdir_p(File.join(@plugins, "tmux-orphan"))
 
     ui, out, err = capture_ui
-    assert_equal 0, Tempo::Commands.sync(env_for(@repo), ui), "a declined adoption is not a failure"
+    assert_equal 0, Tempo::Commands.install(env_for(@repo), ui), "a declined adoption is not a failure"
     assert_includes err.string, %("tmux-alpha")
     assert_includes err.string, "uncommitted changes"
     refute File.symlink?(plugin_dir), "a dirty tree must stay a real directory"

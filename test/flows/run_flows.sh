@@ -378,10 +378,10 @@ flow_clean_after_fresh_init() {
 }
 
 # The CI gesture: dotfiles are checked out with a committed tempo.lock and
-# the plugins already at their locked commits. `sync --frozen` must enforce
+# the plugins already at their locked commits. `install --frozen` must enforce
 # that state and exit 0 without a single network call, and without
 # rewriting the lock it was handed.
-flow_frozen_sync_offline() {
+flow_frozen_install_offline() {
 	install_tempo_copy "$PLUGINS_DIR/tpm"
 	write_conf <<-EOF
 	set -g @plugin '$FIXTURES/tmux-example-plugin'
@@ -390,10 +390,10 @@ flow_frozen_sync_offline() {
 	cp "$HOME/tempo.lock" "$SANDBOX/lock.before"
 	make_git_shim
 
-	out="$(PATH="$FLOW_SHIM_BIN:$PATH" "$PLUGINS_DIR/tpm/bin/tempo" sync --frozen 2>&1)"
+	out="$(PATH="$FLOW_SHIM_BIN:$PATH" "$PLUGINS_DIR/tpm/bin/tempo" install --frozen 2>&1)"
 	rc=$?
-	[ "$rc" -eq 0 ] || { fail "sync --frozen exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
-	assert_no_network "sync --frozen"
+	[ "$rc" -eq 0 ] || { fail "install --frozen exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
+	assert_no_network "install --frozen"
 	cmp -s "$HOME/tempo.lock" "$SANDBOX/lock.before" || fail "frozen rewrote the lockfile"
 	assert_file "$HOME/.local/share/tempo/load.sh"
 }
@@ -410,11 +410,11 @@ flow_frozen_violation_stays_offline() {
 	rm -rf "$PLUGINS_DIR/tmux-example-plugin"
 	make_git_shim
 
-	out="$(PATH="$FLOW_SHIM_BIN:$PATH" "$PLUGINS_DIR/tpm/bin/tempo" sync --frozen 2>&1)"
+	out="$(PATH="$FLOW_SHIM_BIN:$PATH" "$PLUGINS_DIR/tpm/bin/tempo" install --frozen 2>&1)"
 	rc=$?
-	[ "$rc" -eq 1 ] || fail "expected exit 1 from a violating frozen sync, got $rc"
+	[ "$rc" -eq 1 ] || fail "expected exit 1 from a violating frozen install, got $rc"
 	assert_contains "$out" "tmux-example-plugin"
-	assert_no_network "a violating sync --frozen"
+	assert_no_network "a violating install --frozen"
 	[ ! -d "$PLUGINS_DIR/tmux-example-plugin" ] || fail "frozen re-installed a missing plugin"
 	cmp -s "$HOME/tempo.lock" "$SANDBOX/lock.before" || fail "a failed frozen run rewrote the lockfile"
 }
@@ -458,9 +458,9 @@ flow_store_adopts_existing_flat_clone() {
 	run '~/.tmux/plugins/tpm/tpm'
 	EOF
 	start_tmux || return 1
-	out="$("$PLUGINS_DIR/tpm/bin/tempo" sync 2>&1)"
+	out="$("$PLUGINS_DIR/tpm/bin/tempo" install 2>&1)"
 	rc=$?
-	[ "$rc" -eq 0 ] || { fail "sync exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
+	[ "$rc" -eq 0 ] || { fail "install exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
 
 	assert_store_link "$PLUGINS_DIR/tmux-example-plugin"
 	after="$(git -C "$PLUGINS_DIR/tmux-example-plugin" rev-parse HEAD)"
@@ -608,7 +608,7 @@ for _test in \
 	flow_init_fresh \
 	flow_init_drop_in \
 	flow_clean_after_fresh_init \
-	flow_frozen_sync_offline \
+	flow_frozen_install_offline \
 	flow_frozen_violation_stays_offline \
 	flow_store_backed_install_runs_through_the_symlink \
 	flow_store_adopts_existing_flat_clone \

@@ -144,6 +144,23 @@ class TestCommands < Minitest::Test
     refute_includes out.string, "No plugins declared"
   end
 
+  # install now cleans (D32), which makes an empty declared set dangerous: a
+  # config tmux never read would take every plugin with it on one keystroke.
+  # Explicit `tempo clean` still removes them; install must not.
+  def test_install_with_no_declared_plugins_never_cleans
+    Tempo::Commands.install(env_for(@repo), capture_ui.first)
+    installed = File.join(@plugins, "tmux-example-plugin")
+    assert File.exist?(installed)
+
+    ui, out, = capture_ui
+    assert_equal 0, Tempo::Commands.install(env_for, ui)
+
+    assert File.exist?(installed), "an empty config must not delete installed plugins"
+    refute_includes out.string, "Removing"
+    assert_equal 0, Tempo::Commands.clean(env_for, capture_ui.first)
+    refute File.exist?(installed), "explicit clean still removes them"
+  end
+
   def test_mutating_commands_regenerate_artifact_and_lock
     env = env_for(@repo)
     Tempo::Commands.install(env, capture_ui.first)

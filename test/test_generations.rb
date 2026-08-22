@@ -45,16 +45,6 @@ class TestGenerations < Minitest::Test
     [Tempo::Commands.clean(env_for(*specs), ui), out.string, err.string]
   end
 
-  def sync(*specs)
-    ui, out, err = capture_ui
-    [Tempo::Commands.sync(env_for(*specs), ui), out.string, err.string]
-  end
-
-  def restore(*specs)
-    ui, out, err = capture_ui
-    [Tempo::Commands.restore(env_for(*specs), ui), out.string, err.string]
-  end
-
   def rollback(args, specs: [@repo])
     ui, out, err = capture_ui
     [Tempo::Commands.rollback(env_for(*specs), ui, args), out.string, err.string]
@@ -100,12 +90,11 @@ class TestGenerations < Minitest::Test
     add_upstream_commit(@repo)
     update(@repo)
     clean(@repo)
-    sync(@repo)
-    restore(@repo)
+    install(@repo)
 
-    assert_equal [1, 2, 3, 4, 5], numbers
-    assert_equal 5, current
-    assert_equal %w[install update clean sync restore], numbers.map { |n| manifest(n)["op"] }
+    assert_equal [1, 2, 3, 4], numbers
+    assert_equal 4, current
+    assert_equal %w[install update clean install], numbers.map { |n| manifest(n)["op"] }
   end
 
   # A generation is (lockfile bytes, symlink set). The bytes matter: restoring
