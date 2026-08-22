@@ -15,7 +15,7 @@ module Tempo
         update all|<name>...    update plugins (parallel)
         clean                   remove undeclared plugin dirs
         rollback [N]            undo: flip back to the previous generation (or N)
-        generate [--force]      regenerate the loader artifact
+        generate                regenerate the loader artifact
         status                  declared plugins, lock state and generations
         doctor                  check requirements, paths and artifact health
         update-list             internal: plugin list behind the prefix+U prompt
@@ -31,7 +31,6 @@ module Tempo
     # exactly what let `--frozen` be a no-op that reported success.
     FLAGS = {
       "init" => ["--yes", "-y"],
-      "generate" => ["--force"],
       "install" => ["--frozen"],
     }.freeze
 
