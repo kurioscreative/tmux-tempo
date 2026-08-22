@@ -22,7 +22,7 @@ machine needs your exact plugin set back. What it adds and what it costs:
 | Reproducible plugin sets    | `tempo.lock` (exact commits), `sync`, `sync --frozen`         | no                                  | one more file to commit to your dotfiles                                       |
 | Undo a bad update           | `rollback` — offline, instant, 10 generations kept            | re-clone by hand                    | a floor of superseded clones kept on disk per plugin (bounded, then reclaimed) |
 | Failure reporting           | real exit codes, `doctor`, `status`                           | exit 0 no matter what               | a script that relied on tpm always exiting 0 needs a look                      |
-| Finding/declaring plugins   | `search`, `add`, `remove` from the CLI                        | edit the config by hand             | search reads a small curated index, not a registry of everything               |
+| Declaring plugins           | `add`, `remove` from the CLI                                  | edit the config by hand             | none: the config file is still the manifest, and hand-editing still works      |
 | New-source trust gate       | first-install prompt, per host (CLI only)                     | none                                | `prefix + I` stays ungated for tpm parity — see Security                       |
 | Runtime dependencies        | sh + git, **Ruby ≥ 3.0 for management operations**            | bash + git only                     | the Ruby dependency is real; tpm's absence of it is a genuine tpm advantage    |
 | Startup (every reload)      | executes one pregenerated `sh` artifact                       | re-parses config, re-queries tmux   | tempo's parsing cost moves to config-change time and is paid in Ruby (below)   |
@@ -209,46 +209,11 @@ The same operations — and the new ones — are available from a shell:
   restore      put every plugin back on its locked commit
                (--frozen: as above, without installing or cleaning)
   rollback     undo the last operation (rollback N: go to generation N)
-  search       find plugins in the curated index
   trust        record a source as trusted, without installing it
   status       declared plugins, lock state and generation history
   generate     regenerate the loader artifact
   doctor       check requirements, paths and artifact health
 ```
-
-### Finding plugins
-
-```
-$ tempo search clipboard
-tmux-yank — Copy to the system clipboard from copy mode and the command prompt
-  set -g @plugin 'tmux-plugins/tmux-yank'
-```
-
-The second line is exactly what goes in your config — copy it in, then
-`prefix + I`. Search matches names, descriptions and tags, case-insensitively.
-
-The index is a single reviewed JSON file in its own public repo,
-[`tmux-tempo-index`](https://github.com/kurioscreative/tmux-tempo-index) — no
-registry, no service, no account. It is
-fetched the first time you search and cached for a day under
-`~/.local/share/tempo/index.json`. That fetch is the **only** network access
-tempo makes outside `install`/`update` — starting tmux never touches the
-network, and neither does anything else. If the fetch fails, an existing
-cached copy is used and says so; `tempo doctor` shows how old it is.
-
-Run `tempo search` in a terminal and it also offers to install one of the
-matches for you:
-
-```
-$ tempo search clipboard
-1. tmux-yank — Copy to the system clipboard from copy mode and the command prompt
-  set -g @plugin 'tmux-plugins/tmux-yank'
-
-Install which? [1-1, Enter to skip] 1
-```
-
-Enter is always the safe answer, and the picker never appears without a
-terminal — in a pipe or a script, `search` prints its matches and stops.
 
 ### Adding and removing plugins
 
@@ -262,7 +227,7 @@ Installing "tmux-yank"
   "tmux-yank" download success
 ```
 
-It appends exactly one line — the same canonical form `search` prints — and
+It appends exactly one line — tempo's one canonical declaration form — and
 copies your config to a timestamped `.bak-` file first. A symlinked config
 (dotfiles setups) is written _through_: the link survives and the file in
 your repo is what changes. Adding a plugin you already declare, in any quote
@@ -531,7 +496,9 @@ scan your config once and emit a straight-line `sh` loader plus a
 freshness fingerprint into `~/.local/share/tempo/`; every tmux server
 start just executes that artifact. Plugins themselves are stored once per
 `(url, commit)` in the same directory and linked into `~/.tmux/plugins/`,
-which is what makes updates and rollbacks link flips. The full walkthrough —
+which is what makes updates and rollbacks link flips. `install` and `update`
+are the only commands that touch the network at all — starting tmux never
+does, and neither does anything else. The full walkthrough —
 hot path, management plane, the store, lockfile semantics, and the
 intentional divergences from tpm (real exit codes, visible
 non-executable-file warnings) — is in
@@ -572,8 +539,3 @@ and pushing is a separate explicit step:
 Consequence to respect: because history is published, anything ever
 committed under `tempo/` is published forever — commits touching `tempo/`
 must be publishable as written, messages included.
-
-The curated search index is a **separate** repo, `tmux-tempo-index`, and
-follows the same manual copy-review-commit rhythm: its reviewed source lives
-at `tools/tmux-tempo-index/` in the monorepo, and `search` reads it from
-`https://raw.githubusercontent.com/kurioscreative/tmux-tempo-index/main/index.json`.

@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 require "helper"
-require "pty"
-require "timeout"
 
 # `tempo add` / `tempo remove` (D22): the config file is the manifest, so
 # these tests are mostly about bytes in a config file — what lands in it, what
@@ -359,94 +357,5 @@ class TestAddRemove < Minitest::Test
     assert_equal 0, code
     assert File.exist?(installed), "remove edits the config, never the plugin files"
     assert_includes out, "tempo clean"
-  end
-
-  # --- the interactive pick, through a real terminal ----------------------
-
-  # search -> numbered pick -> add -> trust prompt -> installed, driven over a
-  # pty against the real binary: every one of those steps is TTY-gated, so no
-  # in-process assertion can reach them. Never `script(1)` (NOTES.md).
-  def test_interactive_search_pick_installs_the_chosen_plugin
-    index = File.join(@dir, "index.json")
-    File.write(index, JSON.generate({ "version" => 1, "plugins" => [
-                                      { "name" => "tmux-example-plugin", "repo" => repo,
-                                        "description" => "a local fixture", "tags" => ["test"] },
-                                    ] }))
-    File.write(File.join(pty_home, ".tmux.conf"), "set -g status on\n")
-
-    buf, status = pty_search(index, "example") do |r, w, seen|
-      seen.call(r, "Enter to skip")
-      w.write("1\n")
-      seen.call(r, "[y/N]")
-      w.write("y\n")
-    end
-
-    assert_equal 0, status
-    assert_includes buf, "1. tmux-example-plugin"
-    assert_includes buf, %("tmux-example-plugin" download success)
-    assert_includes File.read(File.join(pty_home, ".tmux.conf")),
-                    "set -g @plugin '#{repo}'"
-    assert File.directory?(File.join(pty_home, ".tmux", "plugins", "tmux-example-plugin"))
-  end
-
-  # Enter is the safe answer: nothing is written, nothing is installed, and
-  # the exit code still says "found it".
-  def test_interactive_pick_skipped_by_enter_writes_nothing
-    repo = make_plugin_repo(@fixtures, "tmux-other-plugin")
-    index = File.join(@dir, "index.json")
-    File.write(index, JSON.generate({ "version" => 1, "plugins" => [
-                                      { "name" => "tmux-other-plugin", "repo" => repo,
-                                        "description" => "a local fixture", "tags" => [] },
-                                    ] }))
-    File.write(File.join(pty_home, ".tmux.conf"), "set -g status on\n")
-
-    buf, status = pty_search(index, "other") do |r, w, seen|
-      seen.call(r, "Enter to skip")
-      w.write("\n")
-    end
-
-    assert_equal 0, status
-    refute_includes buf, "download success"
-    assert_equal "set -g status on\n", File.read(File.join(pty_home, ".tmux.conf"))
-    refute File.exist?(File.join(pty_home, ".tmux", "plugins", "tmux-other-plugin"))
-  end
-
-  private
-
-  def pty_home
-    @pty_home ||= begin
-      home = File.join(@dir, "pty-home")
-      FileUtils.mkdir_p(File.join(home, "sock"))
-      home
-    end
-  end
-
-  # TMUX_TMPDIR is a sandbox path and TMUX is cleared, so the server the Env
-  # queries start can never be the developer's own.
-  def pty_search(index, query)
-    bin = File.expand_path("../bin/tempo", __dir__)
-    env = { "HOME" => pty_home, "XDG_DATA_HOME" => File.join(pty_home, "data"),
-            "XDG_CONFIG_HOME" => nil, "TEMPO_INDEX_URL" => "file://#{index}",
-            "TMUX_TMPDIR" => File.join(pty_home, "sock"), "TMUX" => nil, "TMUX_PANE" => nil }
-    buf = +""
-    status = nil
-    seen = ->(reader, needle) { buf << reader.readpartial(4096) until buf.include?(needle) }
-    Timeout.timeout(60) do
-      PTY.spawn(env, bin, "search", query) do |r, w, pid|
-        yield(r, w, seen)
-        begin
-          loop { buf << r.readpartial(4096) }
-        rescue EOFError, Errno::EIO
-          nil
-        end
-        Process.wait(pid)
-        status = $?.exitstatus
-      end
-    end
-    [buf, status]
-  ensure
-    # Explicit socket path, never $TMUX or the ambient TMUX_TMPDIR.
-    system("tmux", "-S", File.join(pty_home, "sock", "tmux-#{Process.uid}", "default"),
-           "kill-server", out: File::NULL, err: File::NULL)
   end
 end

@@ -98,12 +98,6 @@ module Tempo
       File.join(data_dir, "fingerprint")
     end
 
-    # The cached copy of the curated search index. Beside load.sh and the
-    # fingerprint: generated state, per-user, git-clean-safe.
-    def index_cache_path
-      File.join(data_dir, "index.json")
-    end
-
     # The lockfile belongs next to the *real* config file: dotfiles setups
     # symlink ~/.tmux.conf into a repo, and that repo is where the lock
     # should be committed. A missing conf (fresh machine) keeps the logical

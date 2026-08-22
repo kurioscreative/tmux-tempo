@@ -18,7 +18,6 @@ module Tempo
         restore [--frozen]      put every plugin back on its locked commit
         rollback [N]            undo: flip back to the previous generation (or N)
         generate [--force]      regenerate the loader artifact
-        search <query>          find plugins in the curated index
         trust <name-or-url>...  record a source as trusted, without installing
         status                  declared plugins, lock state and generations
         doctor                  check requirements, paths and artifact health
@@ -71,7 +70,6 @@ module Tempo
       when "sync" then Commands.sync(env, ui, frozen: frozen, trust: Trust.gate(env, yes: yes))
       when "restore" then Commands.restore(env, ui, frozen: frozen)
       when "rollback" then Commands.rollback(env, ui, args)
-      when "search" then Search.run(env, ui, args)
       when "trust" then Trust.run(env, ui, args)
       when "status" then Commands.status(env, ui)
       when "update-list" then Commands.update_list(env, ui)
