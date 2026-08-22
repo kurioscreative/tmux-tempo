@@ -65,41 +65,25 @@ retrofitting a permission model onto an ecosystem built without one: it
 breaks legitimate uses, and here it would mostly push people back to
 unmanaged manual clones, which are strictly worse.
 
-The posture is **trust and pin** instead: make the decision to trust a
-source explicit, and make the pin strong. That is honestly weaker than
+The posture is **pin** instead: you decide what to run by writing the
+`@plugin` line, and tempo makes the pin strong. That is honestly weaker than
 isolation. It helps you avoid running _unexpected_ code; it does nothing
 about code you chose to run.
 
-## The first-install trust prompt
+## There is no install-time confirmation prompt
 
-The first time the tempo CLI (`tempo install`, `tempo sync`) is asked to
-clone a source this host has never seen, it asks you to confirm, showing the
-URL it will actually fetch — both the URL as you wrote it and, for a
-`user/repo` shorthand, the GitHub URL it expands to. Approved URLs go in an
-**allowlist** at `~/.local/share/tempo/trusted_urls`: a plain text file, one
-URL per line, `#` comments allowed, which you can read and edit yourself.
-In a terminal you get a `[y/N]` prompt; with no terminal (a script, CI)
-tempo skips that plugin, prints how to proceed, and exits non-zero.
-`tempo trust <name-or-url>` records a source without installing it, and
-`--yes` approves whatever is about to be cloned, for automation.
+tempo does not ask you to approve a source before cloning it, and adding one
+would not buy much: `prefix + I` and the compat `bin/install_plugins` scripts
+are pinned to behave exactly like tpm, so any prompt would have to skip the
+path nearly everyone installs through. A prompt on the remaining path would
+be asking you to confirm a URL you typed into your own config seconds
+earlier, which trains a reflex rather than a decision. And a per-URL approval
+gates the source, never the code: approving a repository once approves every
+commit ever fetched from it afterwards.
 
-The allowlist is keyed on the **URL**, never on the plugin's name. Pointing
-an existing `@plugin` line at a different repository asks again, which is the
-case the check exists for.
-
-Its limits, stated plainly:
-
-- **It covers the tempo CLI only.** `prefix + I`, `prefix + U`, and the
-  compat `bin/install_plugins` scripts install without any prompt, because
-  their behavior is pinned to match tpm exactly. A `@plugin` line installed
-  with `prefix + I` is never gated; on that path your protection is the lock
-  plus `sync --frozen`, not the prompt.
-- **Trust is per host, on purpose.** Syncing your committed lock onto a
-  fresh machine will prompt once per source — or needs `--yes` in CI.
-  Approving a source on your laptop says nothing about your server.
-- **It gates the URL, not the code.** Approving a repository once approves
-  every future commit fetched from it. It is a "did you mean to add this
-  source?" check, not a review, and nothing verifies who controls that URL.
+What actually constrains what runs on your machine is the lockfile: it pins
+exact commits, `sync --frozen` refuses to move off them, and any change shows
+up as a diff in your dotfiles. That is the control worth relying on.
 
 ## What tempo will not do
 

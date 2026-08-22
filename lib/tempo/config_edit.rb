@@ -65,8 +65,8 @@ module Tempo
       end
     end
 
-    def self.add(env, ui, args, trust: nil)
-      new(env, ui).add(args, trust: trust)
+    def self.add(env, ui, args)
+      new(env, ui).add(args)
     end
 
     def self.remove(env, ui, args)
@@ -80,15 +80,15 @@ module Tempo
 
     # --- add ---------------------------------------------------------------
 
-    def add(args, trust: nil)
+    def add(args)
       raws = args.reject { |a| a.start_with?("-") }
       if raws.empty?
         @ui.err("usage: tempo add <owner/repo|url|path>[#branch]...")
         return 1
       end
 
-      # A list, like `tempo trust`: the spec grammar is uniform, and silently
-      # dropping every argument but the first is not a thing a CLI may do.
+      # A list: the spec grammar is uniform, and silently dropping every
+      # argument but the first is not a thing a CLI may do.
       raws.each do |raw|
         existing = declarations.find { |d| d.raw_specs.include?(raw) }
         if existing
@@ -99,7 +99,7 @@ module Tempo
       end
       # The scan behind `specs` is memoized per Env, so the install must run
       # against a fresh one or it would not see the line just written.
-      Commands.install(@env.reload, @ui, trust)
+      Commands.install(@env.reload, @ui)
     end
 
     # --- remove ------------------------------------------------------------

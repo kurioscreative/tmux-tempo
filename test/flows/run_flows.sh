@@ -386,7 +386,7 @@ flow_frozen_sync_offline() {
 	write_conf <<-EOF
 	set -g @plugin '$FIXTURES/tmux-example-plugin'
 	EOF
-	"$PLUGINS_DIR/tpm/bin/tempo" install --yes >/dev/null 2>&1 || fail "seed install failed"
+	"$PLUGINS_DIR/tpm/bin/tempo" install >/dev/null 2>&1 || fail "seed install failed"
 	cp "$HOME/tempo.lock" "$SANDBOX/lock.before"
 	make_git_shim
 
@@ -405,7 +405,7 @@ flow_frozen_violation_stays_offline() {
 	write_conf <<-EOF
 	set -g @plugin '$FIXTURES/tmux-example-plugin'
 	EOF
-	"$PLUGINS_DIR/tpm/bin/tempo" install --yes >/dev/null 2>&1 || fail "seed install failed"
+	"$PLUGINS_DIR/tpm/bin/tempo" install >/dev/null 2>&1 || fail "seed install failed"
 	cp "$HOME/tempo.lock" "$SANDBOX/lock.before"
 	rm -rf "$PLUGINS_DIR/tmux-example-plugin"
 	make_git_shim
@@ -484,7 +484,7 @@ flow_rollback_reverts_plugin_content() {
 	run '~/.tmux/plugins/tpm/tpm'
 	EOF
 	start_tmux || return 1
-	"$PLUGINS_DIR/tpm/bin/tempo" install --yes >/dev/null 2>&1 || fail "install failed"
+	"$PLUGINS_DIR/tpm/bin/tempo" install >/dev/null 2>&1 || fail "install failed"
 	cp "$HOME/tempo.lock" "$SANDBOX/lock.v1"
 	cp "$HOME/.local/share/tempo/load.sh" "$SANDBOX/art.v1"
 
@@ -512,12 +512,11 @@ flow_rollback_reverts_plugin_content() {
 			sed 's/^/      | /' "$HOME/plugins_ran.log"; }
 }
 
-# The trust gate's ungated half (D23 as amended), proven through a real
-# server: `prefix + I` runs bindings/install_plugins, which must clone a
-# source this host has never seen without a prompt, without a word about
-# trust, and without recording anything. A gate that leaked onto this path
-# would hang or skip here — and would break the held-out compat suite.
-flow_binding_install_is_ungated() {
+# `prefix + I` end to end through a real server: bindings/install_plugins
+# must clone a source this host has never seen without prompting for
+# anything. Anything interactive on this path would hang here — and would
+# break the held-out compat suite.
+flow_binding_install_never_prompts() {
 	install_tempo_copy "$PLUGINS_DIR/tpm"
 	write_conf <<-EOF
 	set -g @plugin '$FIXTURES/tmux-example-plugin'
@@ -526,32 +525,6 @@ flow_binding_install_is_ungated() {
 	start_tmux || return 1
 	"$PLUGINS_DIR/tpm/bindings/install_plugins" </dev/null >/dev/null 2>&1
 	assert_dir "$PLUGINS_DIR/tmux-example-plugin/.git"
-	[ ! -f "$HOME/.local/share/tempo/trusted_urls" ] ||
-		fail "the binding path recorded trust; it must not know the gate exists"
-}
-
-# The gated half, same never-seen source: the tempo CLI with no terminal must
-# refuse to clone it, say how to proceed, and exit non-zero — and `tempo
-# trust` must then unblock it.
-flow_cli_install_gates_untrusted_source() {
-	install_tempo_copy "$PLUGINS_DIR/tpm"
-	write_conf <<-EOF
-	set -g @plugin '$FIXTURES/tmux-example-plugin'
-	EOF
-	out="$("$PLUGINS_DIR/tpm/bin/tempo" install </dev/null 2>&1)"
-	rc=$?
-	[ "$rc" -eq 0 ] && fail "an untrusted non-TTY install must not exit 0"
-	assert_contains "$out" "tempo trust"
-	assert_contains "$out" "$FIXTURES/tmux-example-plugin"
-	[ ! -e "$PLUGINS_DIR/tmux-example-plugin" ] || fail "a skipped plugin was cloned anyway"
-
-	"$PLUGINS_DIR/tpm/bin/tempo" trust "$FIXTURES/tmux-example-plugin" >/dev/null 2>&1 ||
-		fail "tempo trust exited non-zero"
-	out="$("$PLUGINS_DIR/tpm/bin/tempo" install </dev/null 2>&1)"
-	rc=$?
-	[ "$rc" -eq 0 ] || { fail "install after trust exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
-	assert_contains "$out" '"tmux-example-plugin" download success'
-	assert_store_link "$PLUGINS_DIR/tmux-example-plugin"
 }
 
 # `tempo add` end to end: the declaration lands in the real config file, the
@@ -563,7 +536,7 @@ flow_add_declares_and_boots_the_plugin() {
 	run '~/.tmux/plugins/tpm/tpm'
 	EOF
 	start_tmux || return 1
-	out="$("$PLUGINS_DIR/tpm/bin/tempo" add "$FIXTURES/tmux-example-plugin" --yes 2>&1)"
+	out="$("$PLUGINS_DIR/tpm/bin/tempo" add "$FIXTURES/tmux-example-plugin" 2>&1)"
 	rc=$?
 	[ "$rc" -eq 0 ] || { fail "add exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
 	assert_contains "$out" '"tmux-example-plugin" download success'
@@ -587,7 +560,7 @@ flow_remove_stops_the_plugin_from_running() {
 	run '~/.tmux/plugins/tpm/tpm'
 	EOF
 	start_tmux || return 1
-	"$PLUGINS_DIR/tpm/bin/tempo" install --yes >/dev/null 2>&1 || fail "seed install failed"
+	"$PLUGINS_DIR/tpm/bin/tempo" install >/dev/null 2>&1 || fail "seed install failed"
 	reload_and_wait_for_plugins
 	assert_file "$HOME/plugins_ran.log"
 
@@ -640,8 +613,7 @@ for _test in \
 	flow_store_backed_install_runs_through_the_symlink \
 	flow_store_adopts_existing_flat_clone \
 	flow_rollback_reverts_plugin_content \
-	flow_binding_install_is_ungated \
-	flow_cli_install_gates_untrusted_source \
+	flow_binding_install_never_prompts \
 	flow_add_declares_and_boots_the_plugin \
 	flow_remove_stops_the_plugin_from_running; do
 	run_test "$_test"

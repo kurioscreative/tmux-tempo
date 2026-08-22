@@ -19,13 +19,11 @@ class TestAddRemove < Minitest::Test
     # data dir would follow XDG_DATA_HOME (NOTES.md).
     @old_xdg_conf = ENV.delete("XDG_CONFIG_HOME")
     @old_xdg_data = ENV.delete("XDG_DATA_HOME")
-    @old_markers = Tempo::Trust::MARKERS.to_h { |m| [m, ENV.delete(m)] }
   end
 
   def teardown
     ENV["XDG_CONFIG_HOME"] = @old_xdg_conf if @old_xdg_conf
     ENV["XDG_DATA_HOME"] = @old_xdg_data if @old_xdg_data
-    @old_markers.each { |m, v| v.nil? ? ENV.delete(m) : ENV[m] = v }
     FileUtils.remove_entry(@dir)
   end
 
@@ -44,9 +42,9 @@ class TestAddRemove < Minitest::Test
                     candidate_config_files: candidates, user_conf: conf, **extra)
   end
 
-  def add(*args, env: env_for, trust: nil)
+  def add(*args, env: env_for)
     ui, out, err = capture_ui
-    [Tempo::ConfigEdit.add(env, ui, args, trust: trust), out.string, err.string]
+    [Tempo::ConfigEdit.add(env, ui, args), out.string, err.string]
   end
 
   def remove(*args, env: env_for)
@@ -152,8 +150,8 @@ class TestAddRemove < Minitest::Test
     assert_includes out, "Already declared"
   end
 
-  # Same list grammar as `tempo trust`. The repeat is the interesting half:
-  # the second pass has to see the line the first one just wrote.
+  # The repeat is the interesting half: the second pass has to see the line
+  # the first one just wrote.
   def test_add_takes_a_list_and_never_repeats_itself
     other = make_plugin_repo(@fixtures, "tmux-other-plugin")
     write_conf("")
@@ -183,21 +181,6 @@ class TestAddRemove < Minitest::Test
     assert_includes out, %("tmux-example-plugin" download success)
     assert File.exist?(File.join(@dir, "plugins", "tmux-example-plugin", ".git"))
     assert_includes File.read(File.join(@dir, "tempo.lock")), "tmux-example-plugin"
-  end
-
-  # The declaration is the user's intent and lands either way; only the clone
-  # is gated (D23/D27). A refused source still tells the user how to proceed.
-  def test_add_installs_through_the_trust_gate
-    write_conf("")
-    env = env_for
-
-    code, _, err = add(repo, env: env, trust: Tempo::Trust.new(env, tty: false))
-
-    assert_equal 1, code
-    assert_includes File.read(conf), "set -g @plugin '#{repo}'"
-    assert_includes err, "skipped: source not trusted"
-    assert_includes err, "tempo trust"
-    refute File.exist?(File.join(@dir, "plugins", "tmux-example-plugin"))
   end
 
   # --- remove: the three quote forms -------------------------------------

@@ -1,6 +1,4 @@
 #!/bin/sh
 # Command-line clean at the path the ecosystem hardcodes.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TEMPO_CONTRACT=1 # impersonation marker (D27); see bin/install_plugins
-export TEMPO_CONTRACT
 exec "$ROOT/bin/tempo" clean "$@"

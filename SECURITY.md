@@ -31,9 +31,9 @@ There is no bounty program.
 Read [THREAT-MODEL.md](THREAT-MODEL.md) before reporting. It is the statement
 of what tempo does and does not defend against, and it is deliberately blunt
 about the limits — most importantly that installing a tmux plugin runs someone
-else's code as you, that there is no sandbox, and that the trust prompt is
-scoped to the `tempo` CLI while `prefix + I` / `prefix + U` and the compat
-bins stay ungated on purpose.
+else's code as you, that there is no sandbox, and that nothing prompts for
+confirmation before an install — the lockfile, not a gate, is what pins what
+runs.
 
 Those documented limits are **not** vulnerabilities; a report that tempo runs
 plugin code will be closed with a pointer back to that document. A report that

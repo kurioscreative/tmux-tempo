@@ -23,7 +23,6 @@ machine needs your exact plugin set back. What it adds and what it costs:
 | Undo a bad update           | `rollback` — offline, instant, 10 generations kept            | re-clone by hand                    | a floor of superseded clones kept on disk per plugin (bounded, then reclaimed) |
 | Failure reporting           | real exit codes, `doctor`, `status`                           | exit 0 no matter what               | a script that relied on tpm always exiting 0 needs a look                      |
 | Declaring plugins           | `add`, `remove` from the CLI                                  | edit the config by hand             | none: the config file is still the manifest, and hand-editing still works      |
-| New-source trust gate       | first-install prompt, per host (CLI only)                     | none                                | `prefix + I` stays ungated for tpm parity — see Security                       |
 | Runtime dependencies        | sh + git, **Ruby ≥ 3.0 for management operations**            | bash + git only                     | the Ruby dependency is real; tpm's absence of it is a genuine tpm advantage    |
 | Startup (every reload)      | executes one pregenerated `sh` artifact                       | re-parses config, re-queries tmux   | tempo's parsing cost moves to config-change time and is paid in Ruby (below)   |
 | Field history               | new in 2026, pinned to tpm by a 29-test held-out compat suite | the original, ~a decade in the wild | maturity favors tpm; the compat suite is the mitigation, not a substitute      |
@@ -197,19 +196,15 @@ The same operations — and the new ones — are available from a shell:
 
   init         wire this checkout into your tmux setup
   install      install declared plugins
-               (--yes: trust new sources without asking)
   add <spec>   declare a plugin in your config, then install it
-               (--yes: trust new sources without asking)
   remove       delete a plugin's declaration from your config
   update all   update plugins (parallel)
   clean        remove undeclared plugin dirs
   sync         install missing + restore locked commits + clean
                (--frozen: enforce the lock offline, never write it)
-               (--yes: trust new sources without asking)
   restore      put every plugin back on its locked commit
                (--frozen: as above, without installing or cleaning)
   rollback     undo the last operation (rollback N: go to generation N)
-  trust        record a source as trusted, without installing it
   status       declared plugins, lock state and generation history
   generate     regenerate the loader artifact
   doctor       check requirements, paths and artifact health
@@ -380,59 +375,14 @@ fails loudly instead of being ignored.
 ## Security
 
 Installing a tmux plugin means running someone else's code with your
-privileges, and tempo does not sandbox it — the lockfile pins what runs,
-which is a real but limited defense. What that does and does not protect
-against is spelled out in [THREAT-MODEL.md](THREAT-MODEL.md); to report a
-vulnerability in tempo itself, see [SECURITY.md](SECURITY.md).
-
-### The first-install prompt
-
-The first time you ask the **`bin/tempo` CLI** to clone a source this machine
-has never fetched from, it shows the URL git will actually be handed and asks:
-
-```
-$ tempo install
-
-tempo has never installed from this source on this host:
-
-  tmux-plugins/tmux-yank
-  https://git::@github.com/tmux-plugins/tmux-yank
-
-A tmux plugin runs as you, with your files and your network,
-every time tmux starts.
-Trust this source and install "tmux-yank"? [y/N]
-```
-
-Answer `y` and the URL is appended to `~/.local/share/tempo/trusted_urls` — a
-plain text file, one URL per line, `#` comments allowed, yours to read and
-edit. It is never asked about again. Answer `n` and that plugin is skipped;
-the others in your config still install.
-
-With no terminal (a script, CI, a cron job) there is nobody to ask, so tempo
-skips the plugin, prints the URL and how to proceed, and exits non-zero:
-
-```
-  "tmux-yank" skipped: source not trusted on this host
-      tmux-plugins/tmux-yank
-      approve it with `tempo trust tmux-yank`, or re-run with --yes
-```
-
-`tempo trust <name-or-url>` records a source without installing anything —
-give it a declared plugin's name or a URL directly. `--yes` on
-`install`/`sync` approves and records whatever is about to be cloned, which
-is the CI gesture.
-
-Three limits, stated plainly:
-
-- **The CLI only.** `prefix + I`, `prefix + U` and `bin/install_plugins`
-  install without asking, because their behavior is pinned byte-for-byte to
-  tpm's. On those paths your protection is the lockfile and `sync --frozen`.
-- **Per host, on purpose.** Syncing a committed lock onto a new machine asks
-  once per source (or takes `--yes`). Trusting a source on your laptop says
-  nothing about your server.
-- **It gates the URL, not the code.** Approving a repository approves every
-  commit ever fetched from it afterwards. It is a "did you mean to add this
-  source?" check, not a review.
+privileges, and tempo does not sandbox it. Nothing prompts you before an
+install either: `prefix + I` is pinned to behave exactly like tpm, so a
+confirmation could only ever cover the CLI, and a per-URL approval gates the
+source rather than the code. The lockfile is the real defense — it pins exact
+commits, `sync --frozen` refuses to move off them, and every change shows up
+in your dotfiles diff. What that does and does not protect against is spelled
+out in [THREAT-MODEL.md](THREAT-MODEL.md); to report a vulnerability in tempo
+itself, see [SECURITY.md](SECURITY.md).
 
 ## Troubleshooting
 

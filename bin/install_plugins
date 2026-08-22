@@ -2,8 +2,4 @@
 # Command-line install at the path the ecosystem hardcodes — the verbatim
 # auto-install snippet from tpm's docs depends on this exact location.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# Impersonation marker (D27): this path must behave byte-identically to the
-# original tpm, so it is handed no first-install trust gate.
-TEMPO_CONTRACT=1
-export TEMPO_CONTRACT
 exec "$ROOT/bin/tempo" install "$@"
