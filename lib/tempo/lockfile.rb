@@ -5,8 +5,8 @@ require "json"
 module Tempo
   # tempo.lock (D5): JSON map of plugin name → {url, branch, commit},
   # written next to the primary config file on every mutating operation and
-  # designed to be committed to dotfiles. `sync`/`restore` consume it;
-  # `update` moves it forward. Legacy @tpm_plugins entries lock identically
+  # designed to be committed to dotfiles. `install` enforces it; `update`
+  # moves it forward. Legacy @tpm_plugins entries lock identically
   # to @plugin entries — they are the same after parsing.
   class Lockfile
     def self.read(path)

@@ -8,10 +8,11 @@ module Tempo
   # `(url, commit)` under `<data_dir>/store/<url-digest>/<commit>/`, and the
   # flat `TMUX_PLUGIN_MANAGER_PATH` layout becomes symlinks into it. Two
   # configs — or two plugin names — that want the same commit share one clone,
-  # and update/restore stop being in-place mutations: they become link flips.
+  # and update/lock-enforcement stop being in-place mutations: they become
+  # link flips.
   #
   # One invariant carries the whole design: **tempo never runs a mutating git
-  # command inside a filed entry.** Update and restore clone the current entry
+  # command inside a filed entry.** Update and enforcement clone the current entry
   # into a staging working copy, mutate *that*, file the result as a new entry
   # and flip the link. An entry's git state therefore always matches the key it
   # is filed under, which is what makes a flip a safe substitute for a checkout.

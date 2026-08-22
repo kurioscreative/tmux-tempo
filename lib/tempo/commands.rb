@@ -254,7 +254,7 @@ module Tempo
         next if Git.head_commit(dir) == entry["commit"]
 
         # A flip when the locked entry is already filed; otherwise the entry is
-        # built in staging first. The fetch retry inside `place` is restore's
+        # built in staging first. The fetch retry inside `place` is enforcement's
         # only network touch, and frozen drops it — preflight has already
         # proven the object is here.
         url = entry["url"] || Git.remote_url(dir)
