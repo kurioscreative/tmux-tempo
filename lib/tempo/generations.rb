@@ -121,12 +121,12 @@ module Tempo
         ui.warn(%(  "#{name}" left alone: it was a plain directory in generation #{number}))
       end
       # Rollback never edits tmux.conf, so a plugin declared after this
-      # generation has nothing to roll back to. Say so; the next install/sync
+      # generation has nothing to roll back to. Say so; the next install
       # is what resolves it — inventing a lock entry for it would not.
       Store.each_declared(env) do |name|
         next if links.key?(name) || unmanaged.include?(name)
 
-        ui.warn(%(  "#{name}" is declared but not in generation #{number}; run install or sync))
+        ui.warn(%(  "#{name}" is declared but not in generation #{number}; run install))
       end
 
       restore_lock(env, number)

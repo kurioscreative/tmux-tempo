@@ -143,9 +143,9 @@ inside a filed entry.** Concretely:
   indented report the compat contract pins, so the report stays real git
   output rather than a reconstruction. The result is filed as a _new_ entry
   and the link flips; a pull landing on an already-filed commit files nothing.
-- **restore** flips to the entry holding the locked commit, and only builds
-  that entry (staging clone + checkout, with the usual fetch retry unless
-  `--frozen`) when it has never been filed.
+- **install**'s lock-enforcement step flips to the entry holding the locked
+  commit, and only builds that entry (staging clone + checkout, with the usual
+  fetch retry unless `--frozen`) when it has never been filed.
 
 Every flip is symlink-at-a-temp-name plus `rename`, never unlink-then-link:
 a tmux server starting mid-flip must never find a missing plugin directory.
@@ -158,7 +158,7 @@ tempo, or a hand-run `git clone` is moved into the store on the first mutating
 op, but only when the work tree is clean (untracked files included — adoption
 _shares_ whatever it moves) and HEAD is contained in a remote-tracking branch.
 Anything else keeps its real directory, warns once, and keeps working: update
-still pulls it in place, restore still checks out in place. The hybrid layout
+still pulls it in place, lock enforcement still checks out in place. The hybrid layout
 is supported indefinitely, not a migration deadline.
 
 ## Generations and rollback (S2.2, D25)
@@ -175,12 +175,12 @@ current            the number the plugin path is standing on
 
 `manifest.json` is written last, so a crash mid-file leaves a directory that
 `Generations.numbers` simply does not count. Every mutating command files one:
-`install`/`update`/`clean`/`sync` through `Commands.finalize` (after the lock
+`install`/`update`/`clean` through `Commands.finalize` (after the lock
 write — the generation snapshots the bytes that call produced), and
-`restore` plus the two `--frozen` paths directly, since those bypass
-`finalize` and never write the lock. Their generation records the _enforced_
-state carrying whatever lock content they were handed, which is exactly what
-rolling back to it should reproduce.
+`install --frozen` directly, since it bypasses `finalize` and never writes the
+lock. Its generation records the _enforced_ state carrying whatever lock
+content it was handed, which is exactly what rolling back to it should
+reproduce.
 
 This is only affordable because of the store: a generation does not copy
 plugins, it records entry paths, so filing one costs a few hundred bytes and
@@ -212,11 +212,12 @@ name → `{url, branch, commit}`. The key design choice: it is a
 **snapshot-from-disk** after every mutating op — entries come from
 `git remote get-url` + HEAD of what's actually declared+installed, never from
 remembered install-time state. There is no state to drift.
-`sync` = install missing + enforce locked commits + clean undeclared, then
-snapshots the now-enforced state, so it round-trips. `restore` is just the
-locked-commits part. What it promises is the commit, not the shape of HEAD:
-flipping onto an entry that was cloned lands on that entry's branch, while an
-entry built by checkout is detached. `update` moves the lock forward. Legacy
+`install` = install missing + enforce locked commits + clean undeclared, then
+snapshots the now-enforced state, so it round-trips (D32 — tpm's install could
+only do the first of those, having no lockfile to enforce). What enforcement
+promises is the commit, not the shape of HEAD: flipping onto an entry that was
+cloned lands on that entry's branch, while an entry built by checkout is
+detached. `update` moves the lock forward. Legacy
 `@tpm_plugins` entries lock identically to `@plugin`
 entries — they are the same after parsing.
 
@@ -242,9 +243,10 @@ prints the `Done, press ESCAPE/ENTER to continue` message keyed off
 ## What "Stage 1 done" means
 
 Everything in S1.1–S1.8 is present: impersonation layout (clone to
-`~/.tmux/plugins/tpm`, zero dotfile edits), all four intentional divergences
+`~/.tmux/plugins/tpm`, zero dotfile edits), all five intentional divergences
 (real update exit codes; CLI default-path fallback; `#branch` in the update
-list; non-executable warning), all six licensed drops (exact-match clean,
+list; non-executable warning; a reconciling `install`, D32), all six licensed
+drops (exact-match clean,
 byte-sort, recursive source scan, normalized `$0`, clean exits, real version
 compare), and the lockfile. The gate:
 
@@ -253,8 +255,9 @@ ruby -Ilib -Itest test/run_all.rb   # tempo's own suite, ships here
 sh test/flows/run_flows.sh          # end-to-end flows, ships here
 ```
 
-The third gate — the held-out tpm compatibility suite (29 tests, one carrying
-a divergence note for the update exit code) — runs against this tree from the
+The third gate — the held-out tpm compatibility suite (30 tests, two carrying
+divergence notes: the update exit code and the reconciling `install`) — runs
+against this tree from the
 development monorepo, where the suite and the vendored original live. It is
 deliberately not vendored here: a parity suite you can edit alongside the
 implementation has stopped being a held-out test.

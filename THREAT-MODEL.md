@@ -22,14 +22,14 @@ decision.
 
 ## What the lockfile pins
 
-Every install, update, clean, and sync writes `tempo.lock` next to your tmux
+Every install, update and clean writes `tempo.lock` next to your tmux
 config: for each plugin, its URL, its branch, and the exact commit — the
-40-character git ID of one precise snapshot of the code. `tempo sync` and
-`tempo restore` put the plugin back on exactly that commit. (What they
-promise is the commit, not the shape of git's HEAD: the plugin directory is
+40-character git ID of one precise snapshot of the code. `tempo install`
+puts the plugin back on exactly that commit. (What it promises is the
+commit, not the shape of git's HEAD: the plugin directory is
 a link into the store, so restoring may land on a branch that happens to
 point at the locked commit, or on a detached HEAD. Either way the bytes that
-run are the locked ones.) `sync --frozen` does the same offline and refuses
+run are the locked ones.) `install --frozen` does the same offline and refuses
 to fetch anything.
 
 What that buys you: an upstream **force-push** — the plugin's author
@@ -82,7 +82,7 @@ gates the source, never the code: approving a repository once approves every
 commit ever fetched from it afterwards.
 
 What actually constrains what runs on your machine is the lockfile: it pins
-exact commits, `sync --frozen` refuses to move off them, and any change shows
+exact commits, `install --frozen` refuses to move off them, and any change shows
 up as a diff in your dotfiles. That is the control worth relying on.
 
 ## What tempo will not do
@@ -95,6 +95,6 @@ that would be revisited only if that changes).
 ## What actually helps
 
 Read the `*.tmux` entry scripts of anything you install. Keep the plugin set
-small and boring. Commit `tempo.lock`, and use `sync --frozen` wherever a
+small and boring. Commit `tempo.lock`, and use `install --frozen` wherever a
 surprise download would be unwelcome. Update on purpose, and read the diff
 when you do.

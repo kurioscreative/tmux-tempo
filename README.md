@@ -19,13 +19,13 @@ machine needs your exact plugin set back. What it adds and what it costs:
 | What                        | tempo                                                         | tpm                                 | the honest cost                                                                |
 | --------------------------- | ------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------ |
 | Config lines & key bindings | same as tpm                                                   | —                                   | none: that is the point                                                        |
-| Reproducible plugin sets    | `tempo.lock` (exact commits), `sync`, `sync --frozen`         | no                                  | one more file to commit to your dotfiles                                       |
+| Reproducible plugin sets    | `tempo.lock` (exact commits), enforced by `install`            | no                                  | one more file to commit to your dotfiles                                       |
 | Undo a bad update           | `rollback` — offline, instant, 10 generations kept            | re-clone by hand                    | a floor of superseded clones kept on disk per plugin (bounded, then reclaimed) |
 | Failure reporting           | real exit codes, `doctor`, `status`                           | exit 0 no matter what               | a script that relied on tpm always exiting 0 needs a look                      |
 | Declaring plugins           | `add`, `remove` from the CLI                                  | edit the config by hand             | none: the config file is still the manifest, and hand-editing still works      |
 | Runtime dependencies        | sh + git, **Ruby ≥ 3.0 for management operations**            | bash + git only                     | the Ruby dependency is real; tpm's absence of it is a genuine tpm advantage    |
 | Startup (every reload)      | executes one pregenerated `sh` artifact                       | re-parses config, re-queries tmux   | tempo's parsing cost moves to config-change time and is paid in Ruby (below)   |
-| Field history               | new in 2026, pinned to tpm by a 29-test held-out compat suite | the original, ~a decade in the wild | maturity favors tpm; the compat suite is the mitigation, not a substitute      |
+| Field history               | new in 2026, pinned to tpm by a 30-test held-out compat suite | the original, ~a decade in the wild | maturity favors tpm; the compat suite is the mitigation, not a substitute      |
 
 ### Measured
 
@@ -53,14 +53,14 @@ straight-line `sh` file: no parsing, no Ruby, no network, whatever your
 config looks like. The deferred cost surfaces in the other two rows, and
 they are tpm wins: tempo's install and config-change moments pay for the
 lockfile, the store and rollback. If you reload rarely and never want
-`sync` or `rollback`, that trade is against you — use tpm.
+the lockfile or `rollback`, that trade is against you — use tpm.
 
 ## Requirements
 
 - **tmux ≥ 1.9** — same floor as tpm.
 - **git** — used for all plugin installs and updates.
 - **Ruby ≥ 3.0** (standard library only; no gems, no bundler) — needed only
-  for management operations (install / update / clean / sync). Loading
+  for management operations (install / update / clean). Loading
   already-installed plugins at tmux startup does **not** need Ruby: startup
   executes a pregenerated `sh` artifact. macOS note: the deprecated system
   Ruby 2.6 is not enough; install a current Ruby via Homebrew or a version
@@ -195,28 +195,32 @@ The same operations — and the new ones — are available from a shell:
 ~/.tmux/plugins/tpm/bin/tempo <command>
 
   init         wire this checkout into your tmux setup
-  install      install declared plugins that are missing (tpm-compatible)
+  install      install missing + enforce the lock + clean undeclared
+               (--frozen: enforce the lock offline, never write it)
   add <spec>   declare a plugin in your config, then install it
   remove       delete a plugin's declaration from your config
   update all   update plugins (parallel)
   clean        remove undeclared plugin dirs
-  sync         install missing + enforce the lock + clean
-               (--frozen: enforce the lock offline, never write it)
-  restore      put every plugin back on its locked commit
-               (--frozen: as above, without installing or cleaning)
   rollback     undo the last operation (rollback N: go to generation N)
   status       declared plugins, lock state and generation history
   generate     regenerate the loader artifact
   doctor       check requirements, paths and artifact health
 ```
 
-**`install` vs `sync`** — worth knowing, because most package managers spell
-it the other way round. `install` behaves exactly like tpm's: it clones what
-is missing and leaves everything else alone, so a plugin already on disk is
-never moved, whatever `tempo.lock` says. `sync` is the reconciling one — it
-installs what is missing, moves installed plugins onto their locked commits,
-and removes undeclared ones. Reproducing a committed lockfile on a new
-machine is `sync`, not `install`.
+**`install` reconciles — it is not tpm's additive install.** tpm could only
+ever clone what was missing, because a directory's existence was the only
+desired state it had. tempo has a lockfile, so `install` means what it means
+in npm, bundler and poetry: clone what is missing, put installed plugins back
+on their locked commits, and remove ones your config no longer declares.
+Pressing `prefix` + `I` after cloning your dotfiles onto a new machine
+reproduces your exact locked set.
+
+Two consequences worth knowing. A plugin you updated by hand outside tempo is
+moved back to its locked commit — `update` is what moves the lock forward. And
+if your config declares **no** plugins, `install` deliberately does not clean:
+that nearly always means tmux read a different config than you edited, not
+that you want everything deleted. `tempo clean` still removes them when you
+mean it.
 
 ### Adding and removing plugins
 
@@ -268,7 +272,8 @@ The old gesture still works, of course: delete (or comment out) the
 `~/.tmux/plugins/<name>` is a **symlink**. The clone itself lives once per
 `(url, commit)` under `~/.local/share/tempo/store/` (XDG), and a filed copy
 is never modified again: `update` pulls in a throwaway working copy and files
-the result as a new entry, then flips the link; `restore` flips the link back.
+the result as a new entry, then flips the link; `install` flips it back to
+the locked commit.
 Nothing in your config changes, and plugins still see the familiar
 `~/.tmux/plugins/<name>/…` path in `$0` — the symlink is not resolved before
 they run.
@@ -285,7 +290,7 @@ Two consequences worth knowing:
   entry. If that matters for a plugin you use, keep its directory in the old
   flat layout (below) — the hybrid layout is supported indefinitely.
 - **Existing plain directories are adopted lazily**, on the first
-  install/update/sync/restore, and only when the directory is a faithful
+  install/update, and only when the directory is a faithful
   checkout of its remote: no uncommitted or untracked files, and a HEAD some
   remote branch contains. Anything else keeps its real directory, keeps
   working exactly as before, and says so once:
@@ -304,7 +309,7 @@ without bound.
 ### Generations and rollback
 
 Every operation that changes what is installed — `install`, `update`, `clean`,
-`sync`, `restore`, and the `prefix + I` / `prefix + U` bindings — first files a
+and the `prefix + I` / `prefix + U` bindings — first files a
 **generation**: the lockfile exactly as it stood, plus which store entry each
 plugin pointed at. Filing one is cheap (a few hundred bytes; the plugins are
 already in the store), so the previous state is always still there.
@@ -337,7 +342,7 @@ Two things rollback deliberately does not do:
 
 - **It never edits your tmux config.** A plugin you declared after the target
   generation has nothing to roll back to; rollback names it and moves on
-  (`"tmux-fzf" is declared but not in generation 4; run install or sync`).
+  (`"tmux-fzf" is declared but not in generation 4; run install`).
 - **It does not touch plugins kept as plain directories** (adoption declined,
   above) — there is no second copy of those to flip to, so they are reported
   and left alone.
@@ -352,14 +357,13 @@ forever.
 
 Every install/update/clean writes `tempo.lock` (JSON: plugin → url, branch,
 commit) next to your real config file. On a new machine, after cloning your
-dotfiles and this repo: `bin/tempo sync` reproduces the exact locked
-plugin set — same commits, not just same plugins. `restore` checks out
-locked commits without installing or cleaning; `update` moves the lock
+dotfiles and this repo: `bin/tempo install` reproduces the exact locked
+plugin set — same commits, not just same plugins. `update` moves the lock
 forward.
 
 #### `--frozen`
 
-`sync --frozen` (and `restore --frozen`) is the `cargo --locked` posture,
+`install --frozen` is the `cargo --locked` posture,
 for CI and for machines where a surprise download is not acceptable. It
 never touches the network and never writes `tempo.lock`. Before changing
 anything it checks that every declared plugin is installed, is in the
@@ -368,13 +372,13 @@ those fails it prints **every** offending plugin and exits 1 having changed
 nothing — no partial enforcement of a lock that cannot be satisfied:
 
 ```
-$ bin/tempo sync --frozen
+$ bin/tempo install --frozen
 frozen: lockfile not satisfied
   "tmux-sensible" not installed
   "tmux-yank" locked commit a1b2c3d4e5f6 missing locally
 ```
 
-The fix is a plain `bin/tempo sync`, which is allowed to download.
+The fix is a plain `bin/tempo install`, which is allowed to download.
 
 Unrecognized flags are a usage error everywhere (`--frozen` on `install`
 included — installing is a network operation by definition), so a typo
@@ -387,7 +391,7 @@ privileges, and tempo does not sandbox it. Nothing prompts you before an
 install either: `prefix + I` is pinned to behave exactly like tpm, so a
 confirmation could only ever cover the CLI, and a per-URL approval gates the
 source rather than the code. The lockfile is the real defense — it pins exact
-commits, `sync --frozen` refuses to move off them, and every change shows up
+commits, `install --frozen` refuses to move off them, and every change shows up
 in your dotfiles diff. What that does and does not protect against is spelled
 out in [THREAT-MODEL.md](THREAT-MODEL.md); to report a vulnerability in tempo
 itself, see [SECURITY.md](SECURITY.md).
