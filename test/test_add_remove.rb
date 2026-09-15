@@ -162,6 +162,22 @@ class TestAddRemove < Minitest::Test
     assert_equal "set -g @plugin '#{repo}'\nset -g @plugin '#{other}'\n", File.read(conf)
   end
 
+  # Friction log #4 (2026-08-15): the backup used to be taken once per spec
+  # with a per-second timestamp, so the second copy overwrote the first and
+  # the surviving "backup" already contained the first append. A backup is
+  # the pre-invocation state or it is not a backup.
+  def test_add_with_several_specs_backs_up_the_pre_invocation_state_once
+    other = make_plugin_repo(@fixtures, "tmux-other-plugin")
+    write_conf("set -g status on\n")
+
+    code, out, = add(repo, other)
+
+    assert_equal 0, code
+    assert_equal 1, backups.size
+    assert_equal "set -g status on\n", File.read(backups.first)
+    assert_equal 1, out.scan("Backed up").size
+  end
+
   def test_add_without_a_spec_is_a_usage_error
     code, _, err = add
 

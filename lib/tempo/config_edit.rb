@@ -87,16 +87,25 @@ module Tempo
         return 1
       end
 
+      # One backup per invocation, taken before the first edit. Backing up
+      # inside the per-spec append gave `add a b` two copies with the same
+      # per-second timestamp: the second overwrote the first, and the
+      # survivor already contained `a`. A backup is the pre-invocation
+      # state or it is not a backup.
+      conf = @env.user_conf
+      backup = back_up(conf) if raws.any? { |raw| declaration_for(raw).nil? }
+
       # A list: the spec grammar is uniform, and silently dropping every
       # argument but the first is not a thing a CLI may do.
       raws.each do |raw|
-        existing = declarations.find { |d| d.raw_specs.include?(raw) }
+        existing = declaration_for(raw)
         if existing
           @ui.ok(%(Already declared "#{raw}" (#{existing.cite})))
         else
           append(raw)
         end
       end
+      @ui.ok("Backed up #{conf} -> #{backup}") if backup
       # The scan behind `specs` is memoized per Env, so the install must run
       # against a fresh one or it would not see the line just written.
       Commands.install(@env.reload, @ui)
@@ -173,9 +182,12 @@ module Tempo
 
     # --- add helpers -------------------------------------------------------
 
+    def declaration_for(raw)
+      declarations.find { |d| d.raw_specs.include?(raw) }
+    end
+
     def append(raw)
       conf = @env.user_conf
-      backup = back_up(conf)
       FileUtils.mkdir_p(File.dirname(conf))
       # Append mode follows a symlinked conf to the real file and writes
       # there; the link itself is never replaced (D11/D14).
@@ -184,7 +196,6 @@ module Tempo
         f.puts(Spec.plugin_line(raw))
       end
       @ui.ok("Added to #{conf}: #{Spec.plugin_line(raw)}")
-      @ui.ok("Backed up #{conf} -> #{backup}") if backup
       @declarations = nil # a second spec in the same run must see this one
     end
 
