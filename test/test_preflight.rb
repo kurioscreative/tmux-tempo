@@ -189,6 +189,21 @@ class TestPreflight < Minitest::Test
     assert_equal 0, install, "install works again once the lock parses"
   end
 
+  # Valid JSON in the wrong shape used to be a TypeError backtrace out of
+  # restore_locked, five shapes out of five tried. Same refusal, same remedy.
+  def test_a_lock_in_the_wrong_shape_is_the_same_refusal
+    install
+    ['[]', 'null', '"x"', '{"plugins": null}', '{"plugins": []}', '{"plugins": {"a": "b"}}'].each do |body|
+      File.write(lock_path, "#{body}\n")
+      err = assert_raises(Tempo::Lockfile::Unparseable, body) { install }
+      assert_includes err.message, "not a tempo lockfile"
+      assert_equal "#{body}\n", File.read(lock_path), body
+    end
+    assert_equal({}, Tempo::Lockfile.read(File.join(@dir, "nope.lock")))
+    File.write(lock_path, %({"version": 1}\n))
+    assert_equal({}, Tempo::Lockfile.read(lock_path), "a missing plugins key is an empty lock, as before")
+  end
+
   def test_status_reports_a_conflicted_lock_and_exits_0
     install
     corrupt_lock

@@ -24,13 +24,22 @@ module Tempo
     # at exit 0 (D35): the third observer with the empty-on-failure shape.
     class Unparseable < StandardError; end
 
+    REMEDY = "resolve it by hand, or `tempo rollback` restores the last recorded lock"
+
     def self.read(path)
       return {} unless File.file?(path)
 
-      JSON.parse(File.read(path)).fetch("plugins", {})
+      doc = JSON.parse(File.read(path))
+      plugins = doc.is_a?(Hash) ? doc.fetch("plugins", {}) : nil
+      # Valid JSON in the wrong shape would otherwise surface as a TypeError
+      # backtrace out of restore_locked — a crash, not a refusal.
+      unless plugins.is_a?(Hash) && plugins.values.all?(Hash)
+        raise Unparseable, "#{path} is not a tempo lockfile (expected {\"plugins\": {name: {url, branch, commit}}}); #{REMEDY}"
+      end
+
+      plugins
     rescue JSON::ParserError => e
-      raise Unparseable, "#{path} cannot be parsed (#{e.message.lines.first.to_s.strip[0, 80]}); " \
-                         "resolve it by hand, or `tempo rollback` restores the last recorded lock"
+      raise Unparseable, "#{path} cannot be parsed (#{e.message.lines.first.to_s.strip[0, 80]}); #{REMEDY}"
     end
 
     # `refresh` names the plugins whose pin this run moved on purpose. A
