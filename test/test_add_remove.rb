@@ -102,6 +102,91 @@ class TestAddRemove < Minitest::Test
     assert_equal "set -g status on\n", File.read(backups.first)
   end
 
+  # Friction log #5: tpm convention — and init's own "keep this at the very
+  # bottom" comment — put the manager's run line last, so an EOF append lands
+  # the declaration *below* the line that loads it. Harmless to tempo (the
+  # scraper reads the whole file) and wrong to every tpm-literate reader.
+  def test_append_lands_above_the_managers_run_line
+    write_conf(<<~CONF)
+      set -g status on
+
+      run '~/.tmux/plugins/tempo/tempo'
+    CONF
+
+    code, = add(repo)
+
+    assert_equal 0, code
+    assert_equal <<~CONF, File.read(conf)
+      set -g status on
+
+      set -g @plugin '#{repo}'
+      run '~/.tmux/plugins/tempo/tempo'
+    CONF
+  end
+
+  # The last manager run line is the one that matters: an earlier one is
+  # leftover tpm wiring, and a declaration below the line that loads it is
+  # exactly the bug being fixed.
+  def test_append_lands_above_the_last_manager_run_line
+    write_conf(<<~CONF)
+      run-shell '~/.tmux/plugins/tpm/tpm'
+      set -g status on
+      run '~/.tmux/plugins/tempo/tempo'
+      set -g status-right ''
+    CONF
+
+    add(repo)
+
+    assert_equal <<~CONF, File.read(conf)
+      run-shell '~/.tmux/plugins/tpm/tpm'
+      set -g status on
+      set -g @plugin '#{repo}'
+      run '~/.tmux/plugins/tempo/tempo'
+      set -g status-right ''
+    CONF
+  end
+
+  # Only the manager's own run line moves the insertion point. Any other
+  # run-shell is the user's, and tempo has no business declaring itself
+  # above it.
+  def test_a_run_line_that_is_not_the_manager_leaves_the_append_at_eof
+    write_conf("run-shell '~/bin/tmux-status.sh'\n")
+
+    add(repo)
+
+    assert_equal "run-shell '~/bin/tmux-status.sh'\nset -g @plugin '#{repo}'\n", File.read(conf)
+  end
+
+  def test_a_list_of_specs_all_land_above_the_run_line_in_order
+    other = make_plugin_repo(@fixtures, "tmux-other-plugin")
+    write_conf("run '~/.tmux/plugins/tempo/tempo'\n")
+
+    add(repo, other)
+
+    assert_equal <<~CONF, File.read(conf)
+      set -g @plugin '#{repo}'
+      set -g @plugin '#{other}'
+      run '~/.tmux/plugins/tempo/tempo'
+    CONF
+  end
+
+  # Inserting rewrites the file rather than appending to it, which is the
+  # write mode that would replace a symlinked conf with a regular file if it
+  # were ever "improved" into tmp-file + rename (D11/D14, NOTES).
+  def test_insert_above_the_run_line_writes_through_a_symlinked_conf
+    real = File.join(@dir, "dotfiles", "tmux.conf")
+    FileUtils.mkdir_p(File.dirname(real))
+    File.write(real, "run '~/.tmux/plugins/tempo/tempo'\n")
+    File.symlink(real, conf)
+
+    code, = add(repo)
+
+    assert_equal 0, code
+    assert File.symlink?(conf), "the conf must still be a symlink"
+    assert_equal real, File.readlink(conf)
+    assert_equal "set -g @plugin '#{repo}'\nrun '~/.tmux/plugins/tempo/tempo'\n", File.read(real)
+  end
+
   # The spec grammar is uniform, so `add` serializes whatever the user typed —
   # a #branch pin included — and the install half honours it.
   def test_a_branch_suffix_is_serialized_verbatim

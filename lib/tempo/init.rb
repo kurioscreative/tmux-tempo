@@ -29,19 +29,53 @@ module Tempo
     # directory, i.e. `<plugin-path>/<name>/<entry>`.
     MANUAL_PLUGIN_RUN = %r{/plugins/[^/]+/}
 
+    # The one run-line dialect tempo parses, and the one place the target is
+    # unquoted. `run-shell -b '<target>'`, `run <target>`.
+    RUN_LINE = /\A\s*run(?:-shell)?\s+(?:-b\s+)?(.+?)\s*\z/
+
+    # This checkout, as Ruby already realpath'd it.
+    CHECKOUT_ROOT = File.expand_path("../..", __dir__)
+
     def self.run(env, ui, yes: false)
       new(env, ui).run(yes: yes)
+    end
+
+    # The target of a run line, quotes stripped, or nil for any other line.
+    def self.run_line_target(line)
+      m = RUN_LINE.match(line)
+      m && m[1].sub(/\A(['"])(.*)\1\z/, '\2')
+    end
+
+    # Does this line load the plugin manager itself? `ConfigEdit` asks so a
+    # new declaration can go *above* it (tpm convention, and what init's own
+    # "keep this at the very bottom" comment promises). The two forms are the
+    # ones init already recognizes: the entry's name — always `tpm` or
+    # `tempo`, including through D14's alias — and a path into this checkout,
+    # for a run line pointing straight at a clone.
+    def self.manager_run_line?(line)
+      target = run_line_target(line)
+      return false unless target
+
+      ENTRY_NAMES.include?(File.basename(target)) || inside_checkout?(target)
+    end
+
+    def self.inside_checkout?(path)
+      real = File.realpath(path)
+      root = File.realpath(CHECKOUT_ROOT)
+      real == root || real.start_with?("#{root}/")
+    rescue SystemCallError
+      false
     end
 
     def initialize(env, ui)
       @env = env
       @ui = ui
-      @root = File.expand_path("../..", __dir__)
+      @root = CHECKOUT_ROOT
     end
 
     def run(yes: false)
       targets = run_line_targets
-      if targets.any? { |t| resolves_into_checkout?(t) }
+      if targets.any? { |t| Init.inside_checkout?(t) }
         @ui.ok("Already set up: a run line in your tmux config points at this checkout. Nothing to do.")
         return 0
       end
@@ -96,7 +130,7 @@ module Tempo
       link = File.join(@env.default_plugin_path, "tempo")
       steps = []
       if File.symlink?(link)
-        unless resolves_into_checkout?(link)
+        unless Init.inside_checkout?(link)
           @ui.err("#{link} is a symlink to something else. Move it aside and re-run init.")
           return nil
         end
@@ -165,8 +199,8 @@ module Tempo
     def run_line_targets
       @env.candidate_config_files.select { |f| File.file?(f) }.flat_map do |f|
         File.readlines(f).filter_map do |line|
-          m = line.match(/\A\s*run(?:-shell)?\s+(?:-b\s+)?(.+?)\s*\z/)
-          m && expand_home(m[1].sub(/\A(['"])(.*)\1\z/, '\2'))
+          target = Init.run_line_target(line)
+          target && expand_home(target)
         end
       end
     end
@@ -174,16 +208,6 @@ module Tempo
     # Same rule as Env: only a leading `~` or literal `$HOME`.
     def expand_home(path)
       path.sub(%r{\A~(?=/|\z)}, @env.home).sub(%r{\A\$HOME(?=/|\z)}, @env.home)
-    end
-
-    def resolves_into_checkout?(path)
-      return false unless File.exist?(path)
-
-      real = File.realpath(path)
-      root = File.realpath(@root)
-      real == root || real.start_with?("#{root}/")
-    rescue Errno::ENOENT
-      false
     end
 
     def append_run_line(conf, line)

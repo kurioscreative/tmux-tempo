@@ -186,16 +186,33 @@ module Tempo
       declarations.find { |d| d.raw_specs.include?(raw) }
     end
 
+    # tpm convention — and init's own "keep this at the very bottom of the
+    # config" comment — put the manager's run line last, so a plain EOF
+    # append lands the declaration *below* the line that loads it. That is
+    # harmless to tempo (the scraper reads the whole file) and reads as a
+    # mistake to anyone tpm-literate, so the declaration goes immediately
+    # above the last run line that loads the manager. A config with no such
+    # line (a sourced snippet, a conf tempo has never wired) still appends.
     def append(raw)
       conf = @env.user_conf
       FileUtils.mkdir_p(File.dirname(conf))
-      # Append mode follows a symlinked conf to the real file and writes
-      # there; the link itself is never replaced (D11/D14).
-      File.open(conf, "a") do |f|
-        f.puts("") if needs_leading_newline?(conf)
-        f.puts(Spec.plugin_line(raw))
+      decl = Spec.plugin_line(raw)
+      lines = File.file?(conf) ? File.readlines(conf) : []
+      at = lines.rindex { |l| Init.manager_run_line?(l.chomp) }
+      if at
+        lines.insert(at, "#{decl}\n")
+        # Truncating in place writes through a symlinked conf; replacing the
+        # file would replace the link (D11/D14).
+        File.open(conf, "w") { |f| f.write(lines.join) }
+      else
+        # Append mode follows a symlinked conf to the real file and writes
+        # there; the link itself is never replaced (D11/D14).
+        File.open(conf, "a") do |f|
+          f.puts("") if needs_leading_newline?(conf)
+          f.puts(decl)
+        end
       end
-      @ui.ok("Added to #{conf}: #{Spec.plugin_line(raw)}")
+      @ui.ok("Added to #{conf}: #{decl}")
       @declarations = nil # a second spec in the same run must see this one
     end
 
