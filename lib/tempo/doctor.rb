@@ -121,7 +121,7 @@ module Tempo
             "UNPARSEABLE (treated as empty)"
           end
         else
-          "not yet written (created on first install)"
+          "not yet written (created by the first install with a plugin to record)"
         end
       @ui.ok("lockfile:    #{path} — #{state}")
     end

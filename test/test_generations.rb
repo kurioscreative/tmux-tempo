@@ -80,9 +80,11 @@ class TestGenerations < Minitest::Test
 
   # --- filing -------------------------------------------------------------
 
-  # Five mutating ops, five generations, numbered 1..5 in the order they ran.
-  # `restore` and the frozen paths bypass `finalize`, so they are the two that
-  # would silently go unrecorded if filing lived only there.
+  # Four mutating ops, four generations, numbered 1..4 in the order they ran.
+  # The frozen path bypasses `finalize`, so it would silently go unrecorded if
+  # filing lived only there. The one deliberate exception: an install with
+  # nothing declared mutates nothing and files nothing (D33; pinned in
+  # test_lockfile.rb).
   def test_every_mutating_op_files_one_generation_with_monotonic_numbering
     install(@repo)
     assert_equal [1], numbers

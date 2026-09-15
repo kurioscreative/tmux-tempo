@@ -6,7 +6,9 @@ require "json"
 module Tempo
   # Numbered generations (S2.2, D25). Every mutating operation snapshots the
   # pair that fully describes "which plugins are live": the lockfile bytes and
-  # the plugin path's symlink set. `rollback` puts both back.
+  # the plugin path's symlink set. `rollback` puts both back. (An install that
+  # finds nothing declared is not a mutating operation — it touches nothing
+  # and files nothing, D33.)
   #
   # This is only affordable because of the store (D24): a generation does not
   # copy plugins, it records which already-filed entry each name pointed at, so

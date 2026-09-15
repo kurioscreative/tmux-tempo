@@ -295,6 +295,10 @@ flow_zero_plugin_guidance() {
 	[ "$rc" -eq 0 ] || fail "install_plugins exited $rc"
 	assert_contains "$out" "@plugin"
 	assert_contains "$out" "No plugins declared"
+	# An empty observation writes nothing (D33): no empty lock in the dotfiles,
+	# no "0 plugin(s)" generation.
+	[ ! -e "$HOME/tempo.lock" ] || fail "zero-plugin install wrote a lockfile"
+	[ ! -d "$HOME/.local/share/tempo/generations" ] || fail "zero-plugin install filed a generation"
 }
 
 # Negative guard for the contract output API: with a plugin declared, the

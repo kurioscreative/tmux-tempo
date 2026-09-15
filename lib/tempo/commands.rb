@@ -47,14 +47,18 @@ module Tempo
       if env.specs.empty?
         # Nothing declared nearly always means tmux read a different config
         # than the user edited (the case doctor's `configs:` line exists for),
-        # so cleaning here would delete every plugin over a typo. Explicit
+        # or could not be asked at all — Tmux.option reads as "" when tmux
+        # fails, so an empty observation carries no information. Cleaning
+        # here would delete every plugin over a typo, and writing the lock
+        # would erase every pin the same way (D33): touch nothing. Explicit
         # `tempo clean` still does it; a keystroke must not.
         ui.ok(ZERO_PLUGIN_GUIDANCE)
-      else
-        install_missing(env, ui)
-        restore_locked(env, ui)
-        clean_undeclared(env, ui)
+        return ui.exit_code
       end
+
+      install_missing(env, ui)
+      restore_locked(env, ui)
+      clean_undeclared(env, ui)
       finalize(env, "install")
       ui.exit_code
     end
@@ -279,10 +283,12 @@ module Tempo
         return 1
       end
 
+      # An empty declared set means a config tmux never read, not "delete
+      # everything" — same rule as `install`, same answer: touch nothing.
+      return ui.exit_code if env.specs.empty?
+
       restore_locked(env, ui, frozen: true)
-      # Local-only, so frozen still runs it — but an empty declared set means a
-      # config tmux never read, not "delete everything" (see `install`).
-      clean_undeclared(env, ui) unless env.specs.empty?
+      clean_undeclared(env, ui) # local-only, so frozen still runs it
       Generator.new(env).generate # the hot path must reflect enforced disk
       Generations.file(env, "install-frozen")
       ui.exit_code
@@ -323,12 +329,15 @@ module Tempo
       "installed at #{commit ? commit[0, 12] : "?"} (#{state})"
     end
 
-    # Every mutating operation rewrites the lock, regenerates the artifact and
-    # files a generation — so the hot path and the lockfile always reflect
-    # disk, and the state just replaced stays reachable (D25). The generation
-    # is filed last, because it snapshots the lock bytes this call wrote.
+    # Every mutating operation writes the lock, regenerates the artifact and
+    # files a generation, so the hot path and the lockfile reflect the run
+    # and the state just replaced stays reachable (D25). Which writer depends
+    # on the verb (D33): install treats the lock as input and only ever adds
+    # or drops entries; update and clean moved or removed plugins on purpose,
+    # so disk is the new truth. The generation is filed last, because it
+    # snapshots the lock bytes this call wrote.
     def finalize(env, op)
-      Lockfile.write(env)
+      op == "install" ? Lockfile.reconcile(env) : Lockfile.write(env)
       Generator.new(env).generate
       Generations.file(env, op)
     end
