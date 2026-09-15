@@ -303,7 +303,7 @@ Two consequences worth knowing:
   working exactly as before, and says so once:
 
   ```
-    "tmux-menus" kept as a plain directory: uncommitted changes
+    "tmux-menus" kept as a plain directory: uncommitted changes (outside rollback's reach; commit or stash them to make it adoptable)
   ```
 
   That is a notice, not an error — the command still succeeds. To adopt such
