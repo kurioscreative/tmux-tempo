@@ -428,6 +428,11 @@ Common first-run cases it (or the install output) explains:
   candidates it checked). Your installed plugins are safe: `install`
   deliberately skips its clean step when nothing is declared, precisely
   because this case is usually a config tmux never read.
+- **"cannot determine the declared plugin set"** — tmux would not answer
+  (not in `PATH`, or no server could be started) or a config file could not
+  be read. tempo refuses rather than treat an unanswered question as "no
+  plugins": nothing is installed, removed, or written, and the previous
+  loader stays in place. `status` still reports; `doctor` names the cause.
 - **"tempo requires Ruby >= 3.0"** — management operations are gated; see
   Requirements. Already-installed plugins keep loading without Ruby.
 

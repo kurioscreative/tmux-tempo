@@ -80,6 +80,10 @@ is a set of small collaborators — the load-bearing ones:
   list: legacy `@tpm_plugins` first, then scraped `@plugin` lines, duplicates
   preserved like the original. Every value is constructor-overridable so tests
   never need tmux.
+  An observation that fails — tmux will not answer, or a config file cannot
+  be read — raises `ObserverError` instead of yielding an empty set, and
+  `CLI.run` rescues it exactly once (D34): every verb consults the declared
+  set before it mutates, so refusing there refuses early.
 - **`Scraper`** ([`lib/tempo/scraper.rb`](lib/tempo/scraper.rb)) — regexes
   matching the original awk matcher exactly (deliberately _no_ word boundary
   after `@plugin`, because the original matches `@plugins` too and accepting
