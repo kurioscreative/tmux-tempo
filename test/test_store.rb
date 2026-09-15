@@ -182,6 +182,11 @@ class TestStore < Minitest::Test
     assert_equal 0, Tempo::Commands.install(env_for(@repo), ui), "a declined adoption is not a failure"
     assert_includes err.string, %("tmux-alpha")
     assert_includes err.string, "uncommitted changes"
+    # Friction log #7: the layout fact alone reads as harmless. The warning
+    # has to say what it costs and what undoes it, at the one moment the
+    # user can still act on it.
+    assert_includes err.string, "outside rollback's reach"
+    assert_includes err.string, "commit or stash"
     refute File.symlink?(plugin_dir), "a dirty tree must stay a real directory"
     assert File.file?(File.join(plugin_dir, "LOCAL-WORK")), "local work must survive"
     assert_empty entries, "nothing may be filed from a dirty tree"
@@ -202,6 +207,8 @@ class TestStore < Minitest::Test
     ui, _, err = capture_ui
     assert_equal 0, Tempo::Commands.install(env_for(@repo), ui)
     assert_includes err.string, "no remote branch"
+    assert_includes err.string, "outside rollback's reach"
+    assert_includes err.string, "push it or check out a remote-tracking branch"
     refute File.symlink?(plugin_dir)
     assert_empty entries
   end

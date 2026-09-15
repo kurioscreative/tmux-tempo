@@ -115,13 +115,26 @@ module Tempo
         next if File.symlink?(dir) || !File.directory?(dir) || !Git.repo?(dir)
 
         if !Git.clean_worktree?(dir)
-          ui.warn(%(  "#{name}" kept as a plain directory: uncommitted changes))
+          declined(ui, name,
+                   "uncommitted changes (outside rollback's reach; commit or stash them to make it adoptable)")
         elsif !Git.head_on_remote_branch?(dir)
-          ui.warn(%(  "#{name}" kept as a plain directory: HEAD is on no remote branch))
+          declined(ui, name,
+                   "HEAD is on no remote branch (outside rollback's reach; push it or check out " \
+                   "a remote-tracking branch to make it adoptable)")
         else
           adopt_dir(env, name, dir)
         end
       end
+    end
+
+    # Friction log #7: "kept as a plain directory" states a fact about layout,
+    # and a user reads it as harmless — the plugin still works, after all. What
+    # it costs is that there is no store entry to record, so no generation
+    # holds this plugin and `tempo rollback` cannot restore it (D25 reports it
+    # `unmanaged` and leaves it alone). The one moment the user can still act
+    # on that is this one, so the line says so and names the way out.
+    def declined(ui, name, reason)
+      ui.warn(%(  "#{name}" kept as a plain directory: #{reason}))
     end
 
     # Frozen's offline question, store-aware: the locked commit counts as
