@@ -27,7 +27,12 @@ setup_sandbox() {
 	HOME="$SANDBOX/home"; export HOME
 	TMUX_TMPDIR="$SANDBOX/sock"; export TMUX_TMPDIR
 	mkdir -p "$HOME" "$TMUX_TMPDIR"
-	unset TMUX XDG_CONFIG_HOME XDG_DATA_HOME
+	# TMUX_PLUGIN_MANAGER_PATH is the one that bites: a shell inside tmux
+	# inherits it, a sandbox server seeds its global env from this shell, and
+	# the manager under test then resolves the OPERATOR'S real plugins dir and
+	# cleans it (NOTES 2026-08-16). Isolation is established here, by
+	# construction, not by a prefix the operator has to remember.
+	unset TMUX TMUX_PANE TMUX_PLUGIN_MANAGER_PATH XDG_CONFIG_HOME XDG_DATA_HOME
 	TERM=xterm-256color; export TERM
 	PLUGINS_DIR="$HOME/.tmux/plugins"
 	FIXTURES="$SANDBOX/fixtures"

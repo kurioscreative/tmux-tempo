@@ -7,6 +7,15 @@ require "open3"
 require "stringio"
 require "tempo"
 
+# Isolation by construction, not by a run prefix (NOTES 2026-08-16 / 09-15).
+# Every tmux server a test starts lives on this socket dir, so the at_exit
+# kill can only ever reach sandbox servers; the three unsets stop a shell
+# inside tmux from handing the operator's real session and plugin path to
+# the code under test.
+ENV["TMUX_TMPDIR"] = Dir.mktmpdir("tempo-test-sock")
+%w[TMUX TMUX_PANE TMUX_PLUGIN_MANAGER_PATH].each { |k| ENV.delete(k) }
+at_exit { system("tmux", "kill-server", out: File::NULL, err: File::NULL) }
+
 module TempoTest
   # A local git repo usable as a plugin source (specs are tried verbatim as
   # git URLs, so local paths clone offline). Mirrors the compat suite's
