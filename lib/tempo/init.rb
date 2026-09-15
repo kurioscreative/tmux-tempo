@@ -20,6 +20,15 @@ module Tempo
   # runs proceed). Each plan step pairs its printed description with the
   # action that performs it, so what is shown and what runs cannot drift.
   class Init
+    # The basenames a plugin manager's entry script can have — tpm's own and
+    # tempo's alias (D14). Everything else under a plugins directory is a
+    # plugin someone is loading by hand.
+    ENTRY_NAMES = %w[tpm tempo].freeze
+
+    # A hand-written plugin load: a file two levels below a `plugins`
+    # directory, i.e. `<plugin-path>/<name>/<entry>`.
+    MANUAL_PLUGIN_RUN = %r{/plugins/[^/]+/}
+
     def self.run(env, ui, yes: false)
       new(env, ui).run(yes: yes)
     end
@@ -44,6 +53,7 @@ module Tempo
       steps, epilogue = plan
       @ui.ok("tempo init will:")
       steps.each { |desc, _action| @ui.ok("  - #{desc}") }
+      migration_hint(targets)
       unless yes || confirmed?
         @ui.ok("Aborted: nothing was changed.")
         return 1
@@ -116,6 +126,26 @@ module Tempo
       [steps, [
         "Done. Reload tmux (tmux source-file #{conf}), then press prefix + I to install plugins.",
       ]]
+    end
+
+    # Run lines that load a plugin by hand are the shape tempo replaces with
+    # `@plugin` declarations, and a user who migrates without noticing them
+    # sees an empty plugin list afterwards and concludes tempo lost their
+    # plugins (friction log #2). So the plan names them — and stops there:
+    # init edits no run line it did not write, which is why this prints
+    # alongside the plan rather than becoming a step. A target resolving into
+    # this checkout cannot reach here; `run` has already returned on those.
+    def migration_hint(targets)
+      manual = targets.select do |t|
+        MANUAL_PLUGIN_RUN.match?(t) && !ENTRY_NAMES.include?(File.basename(t))
+      end
+      return if manual.empty?
+
+      @ui.ok("")
+      @ui.ok("These look like manually loaded plugins (init leaves them exactly as they are):")
+      manual.each { |t| @ui.ok("  - #{shorten_home(t)}") }
+      @ui.ok("After init, declare each one — set -g @plugin '<owner/repo>', or `tempo add <owner/repo>` —")
+      @ui.ok("and delete its run line.")
     end
 
     # TTY-gated consent: scripts and CI (no TTY) proceed, matching the

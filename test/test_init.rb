@@ -72,6 +72,9 @@ class TestInit < Minitest::Test
     rc, out, = run_init
     assert_equal 0, rc
     assert_includes out, "not modify your tmux config" # the plan states the promise
+    # `.../plugins/tpm/tpm` sits under a plugins dir like every hand-loaded
+    # plugin does; the manager's own entry is what tells them apart.
+    refute_includes out, "manually loaded plugins"
     assert_equal before, File.read(conf)
     assert File.symlink?(tpm)
     assert_equal File.realpath(ROOT), File.realpath(tpm)
@@ -112,6 +115,38 @@ class TestInit < Minitest::Test
     assert_includes out, "symlink #{link}"
     assert_includes out, "copy #{conf} -> #{Dir.glob("#{conf}.bak-*").first}"
     assert_includes out, "append to #{conf}: run '~/.tmux/plugins/tempo/tempo'"
+  end
+
+  # Friction log #2: a conf that loads its plugins with hand-written
+  # run-shell lines gets no help from init, so `tempo status` afterwards
+  # shows an empty plugin list and reads as data loss. The hint is advisory
+  # only — init never edits or deletes a run line it did not write.
+  def test_plan_hints_at_manually_loaded_plugin_run_lines
+    File.write(conf, <<~CONF)
+      run-shell ~/.tmux/plugins/tmux-resurrect/resurrect.tmux
+      run-shell '~/.tmux/plugins/tmux-continuum/continuum.tmux'
+    CONF
+    before = File.read(conf)
+
+    rc, out, = run_init
+    assert_equal 0, rc
+    assert_includes out, "manually loaded plugins"
+    assert_includes out, "~/.tmux/plugins/tmux-resurrect/resurrect.tmux"
+    assert_includes out, "~/.tmux/plugins/tmux-continuum/continuum.tmux"
+    assert_includes out, "set -g @plugin"
+    # Advisory only: both run lines survive verbatim, and the sole config
+    # change is init's own appended run line.
+    assert File.read(conf).start_with?(before)
+  end
+
+  # The heuristic has to stay quiet about every other run line, or the hint
+  # is noise the next reader learns to skip.
+  def test_plan_has_no_migration_hint_for_an_ordinary_run_line
+    File.write(conf, "run-shell '~/bin/tmux-status.sh'\n")
+
+    rc, out, = run_init
+    assert_equal 0, rc
+    refute_includes out, "manually loaded plugins"
   end
 
   # The decline branch is unreachable without a TTY, so pin it through a
