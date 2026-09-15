@@ -166,7 +166,7 @@ symlinked at the tempo checkout. No `rm -rf`, no config edits.
 
 Your already-installed plugins under `~/.tmux/plugins/` are adopted in
 place — the first `prefix + I` reports them as `Already installed` and
-snapshots them into `tempo.lock`. No plugin re-downloads.
+records them in `tempo.lock`. No plugin re-downloads.
 
 **From manual `run-shell` lines**: if your config loads plugins directly
 (e.g. `run-shell ~/clones/tmux-resurrect/resurrect.tmux`), switch each line
@@ -222,9 +222,11 @@ reproduces your exact locked set.
 
 Two consequences worth knowing. A plugin you updated by hand outside tempo is
 moved back to its locked commit — `update` is what moves the lock forward. And
-if your config declares **no** plugins, `install` deliberately does not clean:
-that nearly always means tmux read a different config than you edited, not
-that you want everything deleted. `tempo clean` still removes them when you
+if your config declares **no** plugins, `install` and `update` deliberately
+change nothing at all: no clean, no `tempo.lock` write, no generation. An
+empty reading nearly always means tmux read a different config than you
+edited, or could not be asked at all, and erasing every pin over that is as
+wrong as deleting every plugin. `tempo clean` still removes them when you
 mean it.
 
 ### Adding and removing plugins
@@ -317,7 +319,9 @@ Every operation that changes what is installed — `install`, `update`, `clean`,
 and the `prefix + I` / `prefix + U` bindings — first files a
 **generation**: the lockfile exactly as it stood, plus which store entry each
 plugin pointed at. Filing one is cheap (a few hundred bytes; the plugins are
-already in the store), so the previous state is always still there.
+already in the store), so the previous state is always still there. The one
+exception is an install or update that finds no plugins declared: it changes
+nothing, so it files nothing.
 
 `prefix + U` broke something?
 
@@ -360,11 +364,15 @@ forever.
 
 ### The lockfile
 
-Every install/update/clean writes `tempo.lock` (JSON: plugin → url, branch,
-commit) next to your real config file. On a new machine, after cloning your
-dotfiles and this repo: `bin/tempo install` reproduces the exact locked
-plugin set — same commits, not just same plugins. `update` moves the lock
-forward.
+`tempo.lock` (JSON: plugin → url, branch, commit) sits next to your real
+config file, and `install` reads it before it acts: it never rewrites the pin
+of a plugin you still declare, it only adds entries for plugins it just
+installed and drops entries for plugins you removed from your config.
+`update` is what moves a pin forward. So on a new machine, after cloning your
+dotfiles and this repo, `bin/tempo install` reproduces the exact locked
+plugin set — same commits, not just same plugins — and an install that fails
+partway (offline, upstream gone) leaves your committed pins exactly as they
+were.
 
 #### `--frozen`
 
@@ -374,7 +382,9 @@ never touches the network and never writes `tempo.lock`. Before changing
 anything it checks that every declared plugin is installed, is in the
 lockfile, and has its locked commit already in its local clone. If any of
 those fails it prints **every** offending plugin and exits 1 having changed
-nothing — no partial enforcement of a lock that cannot be satisfied:
+nothing — no partial enforcement of a lock that cannot be satisfied. It also
+exits 1 when it finds no plugins declared at all: a gate that passes having
+verified nothing is not a gate.
 
 ```
 $ bin/tempo install --frozen

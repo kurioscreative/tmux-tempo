@@ -22,10 +22,15 @@ decision.
 
 ## What the lockfile pins
 
-Every install, update and clean writes `tempo.lock` next to your tmux
-config: for each plugin, its URL, its branch, and the exact commit — the
-40-character git ID of one precise snapshot of the code. `tempo install`
-puts the plugin back on exactly that commit. (What it promises is the
+`tempo.lock` sits next to your tmux config: for each plugin, its URL, its
+branch, and the exact commit — the 40-character git ID of one precise
+snapshot of the code. `tempo install` puts the plugin back on exactly that
+commit. It reads the lock before it acts and never rewrites the pin of a
+plugin you still declare: it only adds entries for plugins it just installed
+and drops entries for plugins you no longer declare, so a run that fails
+partway — no network, upstream gone, the locked commit unreachable — leaves
+your committed pins untouched for the next attempt. Moving a pin takes an
+explicit `tempo update` or `tempo rollback`. (What install promises is the
 commit, not the shape of git's HEAD: the plugin directory is
 a link into the store, so restoring may land on a branch that happens to
 point at the locked commit, or on a detached HEAD. Either way the bytes that

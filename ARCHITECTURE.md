@@ -102,8 +102,11 @@ is a set of small collaborators — the load-bearing ones:
   (`"<name>" download success` etc.). Updates run in parallel threads with
   per-plugin atomic output. Clean is exact-match membership (licensed drop of
   the substring quirk) and never deletes the dir literally named `tpm`. Every
-  mutating command ends in `finalize`: rewrite the lockfile, regenerate the
-  artifact — so the hot path and lock always reflect disk.
+  mutating command ends in `finalize`: write the lockfile, regenerate the
+  artifact — so the hot path always reflects disk and the lock reflects the
+  run — the lock is an input to that write, and only what `update` moved is
+  re-derived (D33). An `install` or `update` that finds nothing declared
+  returns before `finalize`: no lock write, no regeneration, no generation.
 - **`ConfigEdit`** ([`lib/tempo/config_edit.rb`](lib/tempo/config_edit.rb)) —
   the only code that writes the user's tmux config (D22), behind `tempo add`
   and `tempo remove`. `add` appends the one canonical `@plugin` serialization;
@@ -180,7 +183,10 @@ write — the generation snapshots the bytes that call produced), and
 `install --frozen` directly, since it bypasses `finalize` and never writes the
 lock. Its generation records the _enforced_ state carrying whatever lock
 content it was handed, which is exactly what rolling back to it should
-reproduce.
+reproduce. The exception is a run that mutates nothing: `install`, `update`
+and `install --frozen` all return early when no plugin is declared (D33), so
+there is no state change to file — and `--frozen` exits 1 doing so, because a
+CI gate must not pass vacuously.
 
 This is only affordable because of the store: a generation does not copy
 plugins, it records entry paths, so filing one costs a few hundred bytes and
@@ -208,17 +214,24 @@ kept generation.
 ## The lockfile (S1.8, the new capability)
 
 `tempo.lock` is JSON next to the primary config file, mapping plugin
-name → `{url, branch, commit}`. The key design choice: it is a
-**snapshot-from-disk** after every mutating op — entries come from
-`git remote get-url` + HEAD of what's actually declared+installed, never from
-remembered install-time state. There is no state to drift.
-`install` = install missing + enforce locked commits + clean undeclared, then
-snapshots the now-enforced state, so it round-trips (D32 — tpm's install could
-only do the first of those, having no lockfile to enforce). What enforcement
-promises is the commit, not the shape of HEAD: flipping onto an entry that was
-cloned lands on that entry's branch, while an entry built by checkout is
-detached. `update` moves the lock forward. Legacy
-`@tpm_plugins` entries lock identically to `@plugin`
+name → `{url, branch, commit}`. The key design choice (D33): the lock is an
+**input** to every write, never a snapshot. `Lockfile.write(env, refresh)`
+carries the entry of every still-declared plugin over verbatim, observes an
+entry only for a declared plugin the lock has never seen (freshly cloned, or
+a pre-existing directory it adopted), drops the entries of plugins the same
+run just cleaned, and re-derives only the names in `refresh` — the plugins
+`update` actually updated. So there is still no remembered install-time
+state — the first time a plugin is seen, its entry is read off disk (`git
+remote get-url` + HEAD) — but a pin is never re-derived while the lock
+already has an answer, which is what lets a failed clone, a failed restore
+or a plugin the observer could not see leave the committed pin exactly where
+it was.
+`install` = install missing + enforce locked commits + clean undeclared
+(D32 — tpm's install could only do the first of those, having no lockfile to
+enforce). What enforcement promises is the commit, not the shape of HEAD:
+flipping onto an entry that was cloned lands on that entry's branch, while an
+entry built by checkout is detached. Only `update` (and `rollback`) moves a
+pin. Legacy `@tpm_plugins` entries lock identically to `@plugin`
 entries — they are the same after parsing.
 
 ## The interactive UX (the subtle part)
