@@ -9,13 +9,14 @@ module Tempo
   # @tpm_plugins entries lock identically to @plugin entries — they are the
   # same after parsing.
   #
-  # Two writers, because the two verbs mean different things (D33). `update`
-  # snapshots disk: it moved the plugins on purpose, so what is on disk is
-  # the new truth. `install` reconciles: the lock is its *input*, and a run
-  # may add an entry for a plugin it cloned and drop one for a plugin no
-  # longer declared, but never rewrites an entry for a plugin that is still
-  # declared — a failed clone or a failed restore must leave the pin exactly
-  # where it was, or the lock is a log of what happened rather than a lock.
+  # The lock is an input, never a snapshot (D33). A run carries every entry
+  # for a still-declared plugin over verbatim, observes an entry only for a
+  # declared plugin the lock has never seen, and drops the entries of plugins
+  # no longer declared (the same run just cleaned them). The one way a pin
+  # moves is `refresh`: the plugins `update` actually updated, which the run
+  # moved on purpose. Anything else — a failed clone, a failed restore, a
+  # plugin the observer could not see — leaves the pin exactly where it was,
+  # or the lock is a log of what happened rather than a lock.
   class Lockfile
     def self.read(path)
       return {} unless File.file?(path)
@@ -25,35 +26,24 @@ module Tempo
       {}
     end
 
-    # Snapshot from disk: for every declared+installed plugin record the
-    # origin URL, the pinned branch (null when unpinned), and HEAD.
-    def self.write(env)
-      plugins = {}
-      env.specs.each do |spec|
-        next if plugins.key?(spec.name)
-
-        entry = observe(env, spec)
-        plugins[spec.name] = entry if entry
-      end
-      persist(env, plugins)
-    end
-
-    # Lock as input: keep the existing entry of every plugin still declared,
-    # verbatim; observe only plugins the lock has never seen. A declared
-    # plugin that is neither locked nor installed (its clone failed) gets no
-    # entry, and the next successful install records it.
-    def self.reconcile(env)
+    # `refresh` names the plugins whose pin this run moved on purpose. A
+    # declared plugin that is neither locked nor installed (its clone failed)
+    # gets no entry, and the next successful install records it.
+    def self.write(env, refresh = [])
       locked = read(env.lockfile_path)
       plugins = {}
       env.specs.each do |spec|
         next if plugins.key?(spec.name)
 
-        entry = locked[spec.name] || observe(env, spec)
+        entry = locked[spec.name]
+        entry = observe(env, spec) if entry.nil? || refresh.include?(spec.name)
         plugins[spec.name] = entry if entry
       end
       persist(env, plugins)
     end
 
+    # What disk says about one plugin: origin URL, the declared branch (null
+    # when unpinned), and HEAD. Nil when there is nothing to record.
     def self.observe(env, spec)
       return nil unless env.installed?(spec.name)
 

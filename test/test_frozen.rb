@@ -198,7 +198,9 @@ class TestFlagParsing < Minitest::Test
   # word-splitting path turns them into plugin names.
   def test_update_tokens_are_never_flag_checked
     dir = Dir.mktmpdir("tempo-flags")
-    env = build_env(dir, specs: [])
+    # Something must be declared or the empty-set guard (D33) answers first;
+    # nothing here clones it.
+    env = build_env(dir, specs: ["example/tmux-declared"])
     ui, _, err = capture_ui
     assert_equal 1, Tempo::Commands.update(env, ui, ["--weird"])
     assert_includes err.string, "--weird not installed!"

@@ -115,23 +115,39 @@ class TestLockfile < Minitest::Test
     install(env_for(@repo))
     lock_before = File.read(lock_path)
     assert_equal 1, generation_count
+    env = env_for
+    # The artifact is the most dangerous of the skipped writes: regenerating
+    # from an empty observation would bake an empty load.sh with a fresh
+    # fingerprint, and every plugin would stop loading until a config edit.
+    File.write(env.artifact_path, "sentinel\n")
 
     ui, out, = capture_ui
-    assert_equal 0, Tempo::Commands.install(env_for, ui)
+    assert_equal 0, Tempo::Commands.install(env, ui)
 
     assert_includes out.string, "No plugins declared"
     assert_equal lock_before, File.read(lock_path)
     assert_equal 1, generation_count
+    assert_equal "sentinel\n", File.read(env.artifact_path)
   end
 
-  def test_frozen_install_with_nothing_declared_files_no_generation
+  # Frozen is the CI posture, and a gate that passes having verified nothing
+  # is worse than one that fails: unlike plain install this exits 1.
+  def test_frozen_install_with_nothing_declared_fails_and_touches_nothing
     install(env_for(@repo))
     lock_before = File.read(lock_path)
+    env = env_for
+    File.write(env.artifact_path, "sentinel\n")
 
-    assert_equal 0, Tempo::Commands.install(env_for, capture_ui.first, frozen: true)
+    ui, _, err = capture_ui
+    assert_equal 1, Tempo::Commands.install(env, ui, frozen: true)
 
+    assert_includes err.string, "frozen: no plugins declared"
     assert_equal lock_before, File.read(lock_path)
     assert_equal 1, generation_count
+    assert_equal "sentinel\n", File.read(env.artifact_path)
+    # Before the guard, an empty set under --frozen had no violations and so
+    # went straight to clean_undeclared: every installed plugin deleted, exit 0.
+    assert File.exist?(File.join(@plugins, "tmux-example-plugin"))
   end
 
   # Fresh machine with a committed lock, upstream unreachable: the clone
@@ -163,16 +179,76 @@ class TestLockfile < Minitest::Test
     assert_equal 1, Tempo::Commands.install(env_for(@repo), ui)
 
     assert_includes err.string, %("tmux-example-plugin" restore fail)
+    assert_includes err.string, "`tempo update tmux-example-plugin` moves the pin"
     assert_equal lock_before, File.read(lock_path)
+  end
+
+  # The same rule for update (found in review): `prefix + U` on a machine
+  # where one declared plugin never cloned used to drop that plugin's pin at
+  # exit 0, because the writer recorded disk and disk had nothing to say.
+  def test_update_keeps_the_pin_of_a_declared_plugin_it_could_not_touch
+    install(env_for(@repo))
+    ghost = File.join(@fixtures, "tmux-ghost") # declared, locked elsewhere, never cloned here
+    doc = JSON.parse(File.read(lock_path))
+    doc["plugins"]["tmux-ghost"] = { "url" => ghost, "branch" => nil, "commit" => "f" * 40 }
+    File.write(lock_path, "#{JSON.pretty_generate(doc)}\n")
+    add_upstream_commit(@repo)
+
+    assert_equal 0, Tempo::Commands.update(env_for(@repo, ghost), capture_ui.first, ["all"])
+
+    lock = Tempo::Lockfile.read(lock_path)
+    assert_equal "f" * 40, lock.dig("tmux-ghost", "commit")
+    refute_equal doc.dig("plugins", "tmux-example-plugin", "commit"),
+                 lock.dig("tmux-example-plugin", "commit"), "the updated plugin's pin must move"
+  end
+
+  def test_update_with_nothing_declared_touches_nothing
+    install(env_for(@repo))
+    lock_before = File.read(lock_path)
+    env = env_for
+    File.write(env.artifact_path, "sentinel\n")
+
+    ui, out, = capture_ui
+    assert_equal 0, Tempo::Commands.update(env, ui, ["all"])
+
+    assert_includes out.string, "No plugins declared"
+    assert_equal lock_before, File.read(lock_path)
+    assert_equal 1, generation_count
+    assert_equal "sentinel\n", File.read(env.artifact_path)
+  end
+
+  # clean drops the entries of what it removed and nothing else; the `branch`
+  # sentinel proves the surviving entry was carried, not re-derived.
+  def test_clean_drops_undeclared_entries_and_carries_declared_ones_verbatim
+    other = make_plugin_repo(@fixtures, "tmux-other-plugin")
+    install(env_for(@repo, other))
+    doc = JSON.parse(File.read(lock_path))
+    doc["plugins"]["tmux-example-plugin"]["branch"] = "dev"
+    File.write(lock_path, "#{JSON.pretty_generate(doc)}\n")
+
+    assert_equal 0, Tempo::Commands.clean(env_for(@repo), capture_ui.first)
+
+    lock = Tempo::Lockfile.read(lock_path)
+    assert_equal %w[tmux-example-plugin], lock.keys
+    assert_equal doc["plugins"]["tmux-example-plugin"], lock["tmux-example-plugin"]
+    refute File.exist?(File.join(@plugins, "tmux-other-plugin"))
   end
 
   # What install may do to the lock: add an entry for a plugin it cloned,
   # drop one for a plugin it cleaned. An entry for a plugin that is still
   # declared is carried over byte for byte, even when disk has moved.
+  #
+  # The carried-over entry deliberately pins `branch` to a value the
+  # declaration does not carry: a successful install puts disk back on the
+  # locked commit, so `commit` alone cannot tell a snapshot writer from a
+  # reconciling one, and an exit-code gate would pass the failure tests
+  # while still re-deriving every pin on success. `branch` is the field that
+  # only the declaration can produce, so it is the one that exposes a
+  # re-derivation.
   def test_install_adds_and_drops_entries_but_never_rewrites_a_declared_one
     other = make_plugin_repo(@fixtures, "tmux-other-plugin")
     install(env_for(@repo))
-    pinned = Tempo::Lockfile.read(lock_path).fetch("tmux-example-plugin")
+    pinned = Tempo::Lockfile.read(lock_path).fetch("tmux-example-plugin").merge("branch" => "dev")
 
     add_upstream_commit(@repo)
     Tempo::Commands.update(env_for(@repo), capture_ui.first, ["all"])

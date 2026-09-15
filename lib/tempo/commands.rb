@@ -72,10 +72,17 @@ module Tempo
         return 1
       end
 
+      # Same guard as install (D33): an empty observation carries no
+      # information, and writing the lock from it would erase every pin.
+      if env.specs.empty?
+        ui.ok(ZERO_PLUGIN_GUIDANCE)
+        return ui.exit_code
+      end
+
       prepare_path(env, ui, verify_writable: false)
       Store.adopt(env, ui)
-      update_named(env, ui, names)
-      finalize(env, "update")
+      updated = update_named(env, ui, names)
+      finalize(env, "update", updated)
       ui.exit_code
     end
 
@@ -202,7 +209,9 @@ module Tempo
         end
 
       # Parallel like the original; each plugin's report emits atomically.
-      targets.map do |name|
+      # Returns the names that actually moved: the only pins the lock may
+      # re-derive from disk (D33).
+      results = targets.map do |name|
         Thread.new do
           out, ok = Store.update(env, name)
           indented = out.split("\n").map { |l| "    | #{l}" }.join("\n")
@@ -211,8 +220,10 @@ module Tempo
           else
             ui.err(%(  "#{name}" update fail\n#{indented}))
           end
+          [name, ok]
         end
-      end.each(&:join)
+      end.map(&:value)
+      results.select { |_, ok| ok }.map(&:first)
     end
 
     def clean_undeclared(env, ui)
@@ -266,7 +277,10 @@ module Tempo
         if ok
           ui.ok(%(  "#{spec.name}" restored to #{entry["commit"][0, 12]}))
         else
-          ui.err(%(  "#{spec.name}" restore fail))
+          # The pin stays (D33), so this recurs on every install until the
+          # user moves it; say how.
+          ui.err(%(  "#{spec.name}" restore fail: locked commit #{entry["commit"][0, 12]} unavailable ) +
+                 %{(`tempo update #{spec.name}` moves the pin)})
         end
       end
     end
@@ -276,16 +290,20 @@ module Tempo
     # is satisfiable from local objects. Partial enforcement of a broken
     # lock is worse than no enforcement.
     def frozen_enforce(env, ui)
+      # An empty declared set means a config tmux never read, not "nothing to
+      # do": a CI gate that passes having verified nothing is worse than one
+      # that fails, so unlike plain install this is an error.
+      if env.specs.empty?
+        ui.err("frozen: no plugins declared, nothing to enforce")
+        return 1
+      end
+
       violations = frozen_violations(env)
       unless violations.empty?
         ui.err("frozen: lockfile not satisfied")
         violations.each { |name, reason| ui.err(%(  "#{name}" #{reason})) }
         return 1
       end
-
-      # An empty declared set means a config tmux never read, not "delete
-      # everything" — same rule as `install`, same answer: touch nothing.
-      return ui.exit_code if env.specs.empty?
 
       restore_locked(env, ui, frozen: true)
       clean_undeclared(env, ui) # local-only, so frozen still runs it
@@ -331,13 +349,12 @@ module Tempo
 
     # Every mutating operation writes the lock, regenerates the artifact and
     # files a generation, so the hot path and the lockfile reflect the run
-    # and the state just replaced stays reachable (D25). Which writer depends
-    # on the verb (D33): install treats the lock as input and only ever adds
-    # or drops entries; update and clean moved or removed plugins on purpose,
-    # so disk is the new truth. The generation is filed last, because it
-    # snapshots the lock bytes this call wrote.
-    def finalize(env, op)
-      op == "install" ? Lockfile.reconcile(env) : Lockfile.write(env)
+    # and the state just replaced stays reachable (D25). The lock is an input
+    # to that write (D33): only the pins in `refresh` — what update moved on
+    # purpose — are re-derived from disk. The generation is filed last,
+    # because it snapshots the lock bytes this call wrote.
+    def finalize(env, op, refresh = [])
+      Lockfile.write(env, refresh)
       Generator.new(env).generate
       Generations.file(env, op)
     end
