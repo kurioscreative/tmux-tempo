@@ -66,7 +66,10 @@ module Tempo
       record(abs)
       return unless File.file?(abs)
 
-      File.foreach(abs) do |line|
+      # `scrub` because tmux itself reads a config with a stray latin-1 byte
+      # just fine; a regex ArgumentError here used to drop the whole file.
+      File.foreach(abs) do |raw|
+        line = raw.scrub
         if PLUGIN_LINE.match?(line)
           # awk: gsub quotes away, take $4
           spec = line.delete(%('")).split[3]
@@ -75,8 +78,10 @@ module Tempo
           resolve_sourced(m[3].strip).each { |p| scan_file(p) }
         end
       end
-    rescue SystemCallError, ArgumentError # unreadable file / invalid bytes
-      nil
+    rescue SystemCallError => e
+      # A file that exists but cannot be read holds declarations we cannot
+      # see; skipping it would report them as undeclared (D34).
+      raise ObserverError, "#{abs} cannot be read (#{e.message})"
     end
 
     def record(abs)

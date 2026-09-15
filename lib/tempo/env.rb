@@ -1,6 +1,13 @@
 # frozen_string_literal: true
 
 module Tempo
+  # The declared plugin set could not be observed (D34): tmux would not
+  # answer, or a config file could not be read. Raised instead of returning
+  # an empty set, because an empty set is indistinguishable from "nothing
+  # declared" and every mutating verb acts on that. CLI rescues it once;
+  # nothing below it may.
+  class ObserverError < StandardError; end
+
   # Resolves every piece of machine state the commands need (paths, the
   # live @tpm_plugins option, the declared plugin list). Memoized, and every
   # value is overridable via the constructor so tests never need tmux.
@@ -51,7 +58,9 @@ module Tempo
     end
 
     def tpm_plugins_option
-      @tpm_plugins_option ||= @overrides[:tpm_plugins_option] || Tmux.option("@tpm_plugins")
+      @tpm_plugins_option ||= @overrides[:tpm_plugins_option] || Tmux.option("@tpm_plugins") ||
+                              raise(ObserverError, "tmux could not be asked for @tpm_plugins " \
+                                                   "(is tmux installed and able to start a server?)")
     end
 
     def candidate_config_files

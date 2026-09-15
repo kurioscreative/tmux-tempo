@@ -286,6 +286,40 @@ flow_doctor_healthy() {
 	assert_contains "$out" "lockfile"
 }
 
+# A tmux that will not answer must not read as "nothing declared" (D34):
+# every verb refuses before touching anything, status still reports, and a
+# stale-artifact regenerate keeps the previous loader.
+flow_observer_failure_changes_nothing() {
+	install_tempo_copy "$PLUGINS_DIR/tpm"
+	write_conf <<-EOF
+	set -g @plugin '$FIXTURES/tmux-example-plugin'
+	EOF
+	"$PLUGINS_DIR/tpm/bin/tempo" install >/dev/null 2>&1 || fail "seed install failed"
+	cp "$HOME/tempo.lock" "$SANDBOX/lock.before"
+	cp "$HOME/.local/share/tempo/load.sh" "$SANDBOX/load.before"
+	mute="$SANDBOX/mute-tmux-bin"
+	mkdir -p "$mute"
+	printf '#!/bin/sh\nexit 1\n' > "$mute/tmux"
+	chmod +x "$mute/tmux"
+
+	out="$(PATH="$mute:$PATH" "$PLUGINS_DIR/tpm/bin/tempo" install 2>&1)"
+	rc=$?
+	[ "$rc" -eq 1 ] || fail "install with a mute tmux exited $rc"
+	assert_contains "$out" "cannot determine the declared plugin set"
+	assert_contains "$out" "nothing was changed"
+	cmp -s "$HOME/tempo.lock" "$SANDBOX/lock.before" || fail "a failed observation rewrote the lockfile"
+	assert_dir "$PLUGINS_DIR/tmux-example-plugin"
+
+	printf '# edit\n' >> "$HOME/.tmux.conf" # stale fingerprint: the hot path would regenerate
+	PATH="$mute:$PATH" "$PLUGINS_DIR/tpm/bin/tempo" generate >/dev/null 2>&1 && fail "generate succeeded with a mute tmux"
+	cmp -s "$HOME/.local/share/tempo/load.sh" "$SANDBOX/load.before" || fail "a failed observation replaced the artifact"
+
+	out="$(PATH="$mute:$PATH" "$PLUGINS_DIR/tpm/bin/tempo" status 2>&1)"
+	rc=$?
+	[ "$rc" -eq 0 ] || fail "status with a mute tmux exited $rc"
+	assert_contains "$out" "plugins could not be determined"
+}
+
 # Zero plugins declared: install must guide the user toward @plugin.
 flow_zero_plugin_guidance() {
 	install_tempo_copy "$PLUGINS_DIR/tpm"
@@ -608,6 +642,7 @@ for _test in \
 	flow_doctor_no_ruby_exits_1 \
 	flow_doctor_healthy \
 	flow_zero_plugin_guidance \
+	flow_observer_failure_changes_nothing \
 	flow_declared_plugin_suppresses_guidance \
 	flow_init_fresh \
 	flow_init_drop_in \

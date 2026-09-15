@@ -92,10 +92,14 @@ module Tempo
       end
     end
 
+    # Hard fail (D34): if the declared set cannot be observed, no management
+    # operation can work, which is what doctor's exit code means.
     def report_plugins
       names = @env.specs.map(&:name).uniq
       installed = names.count { |n| @env.installed?(n) }
       @ui.ok("plugins:     #{names.size} declared, #{installed} installed")
+    rescue ObserverError => e
+      @ui.err("plugins:     cannot be determined — #{e.message} — FAIL")
     end
 
     def report_artifact

@@ -10,9 +10,13 @@ module Tempo
   module Tmux
     module_function
 
+    # Nil when tmux could not be asked (not in PATH, or no server could be
+    # started) — distinct from "" for "asked, unset". Env turns nil into an
+    # ObserverError (D34): an unanswered question must never read as an
+    # empty answer.
     def option(name)
       out, ok = run("start-server", ";", "show-option", "-gqv", name)
-      ok ? out.chomp : ""
+      ok ? out.chomp : nil
     end
 
     # A tmux *global environment variable* (not an OS env var). Returns nil

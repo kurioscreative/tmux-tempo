@@ -46,12 +46,11 @@ module Tempo
       Store.adopt(env, ui)
       if env.specs.empty?
         # Nothing declared nearly always means tmux read a different config
-        # than the user edited (the case doctor's `configs:` line exists for),
-        # or could not be asked at all — Tmux.option reads as "" when tmux
-        # fails, so an empty observation carries no information. Cleaning
-        # here would delete every plugin over a typo, and writing the lock
-        # would erase every pin the same way (D33): touch nothing. Explicit
-        # `tempo clean` still does it; a keystroke must not.
+        # than the user edited (the case doctor's `configs:` line exists for;
+        # an observer that *failed* raises instead, D34). Cleaning here would
+        # delete every plugin over a typo, and writing the lock would erase
+        # every pin the same way (D33): touch nothing. Explicit `tempo clean`
+        # still does it; a keystroke must not.
         ui.ok(ZERO_PLUGIN_GUIDANCE)
         return ui.exit_code
       end
@@ -113,11 +112,28 @@ module Tempo
       Generations.rollback(env, ui, number)
     end
 
+    # A report, not a check: an observer failure is one more fact to print
+    # (D34), and an empty declared set gets the same pointer install gives,
+    # because an empty list here reads as "tempo lost my plugins".
     def status(env, ui)
       lock = Lockfile.read(env.lockfile_path)
       ui.ok("plugins path: #{env.plugin_path}")
       ui.ok("lockfile:     #{env.lockfile_path}")
       ui.ok("")
+      begin
+        list_declared(env, ui, lock)
+      rescue ObserverError => e
+        ui.warn("  plugins could not be determined: #{e.message}")
+      end
+      show_generations(env, ui)
+      0
+    end
+
+    def list_declared(env, ui, lock)
+      if env.specs.empty?
+        ui.ok("  no plugins declared — add `set -g @plugin '<owner/repo>'` lines to your tmux config, or run `tempo add <owner/repo>`")
+        return
+      end
       seen = {}
       env.specs.each do |spec|
         next if seen[spec.name]
@@ -125,8 +141,6 @@ module Tempo
         seen[spec.name] = true
         ui.ok("  #{spec.name}: #{status_line(env, lock, spec)}")
       end
-      show_generations(env, ui)
-      0
     end
 
     # Generation history, newest first, `*` marking the one the plugin path is

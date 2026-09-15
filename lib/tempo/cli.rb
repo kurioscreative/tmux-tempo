@@ -51,6 +51,16 @@ module Tempo
       env = Env.new
       ui = UI.new(tmux_echo: tmux_echo)
 
+      dispatch(command, args, env, ui, frozen: frozen, yes: yes)
+    rescue ObserverError => e
+      # The one place this is caught (D34). Every verb consults the declared
+      # set before it mutates anything, so refusing here refuses early.
+      ui.err("tempo: cannot determine the declared plugin set: #{e.message}")
+      ui.err("tempo: nothing was changed")
+      1
+    end
+
+    def self.dispatch(command, args, env, ui, frozen:, yes:)
       case command
       when "install" then Commands.install(env, ui, frozen: frozen)
       when "add" then ConfigEdit.add(env, ui, args)
