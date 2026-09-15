@@ -8,13 +8,22 @@ require "stringio"
 require "tempo"
 
 # Isolation by construction, not by a run prefix (NOTES 2026-08-16 / 09-15).
-# Every tmux server a test starts lives on this socket dir, so the at_exit
-# kill can only ever reach sandbox servers; the three unsets stop a shell
-# inside tmux from handing the operator's real session and plugin path to
-# the code under test.
-ENV["TMUX_TMPDIR"] = Dir.mktmpdir("tempo-test-sock")
+# Every tmux server a test starts lives on this socket dir, so the kill at
+# the end can only ever reach sandbox servers; XDG_DATA_HOME is absolute and
+# would otherwise send a forgotten `data_dir:` override at the operator's
+# real store; the three unsets stop a shell inside tmux from handing the
+# operator's real session and plugin path to the code under test.
+# Minitest.after_run, not at_exit: minitest/autorun registered its own
+# at_exit first, and at_exit handlers run last-in-first-out, so a plain
+# at_exit here would fire before a single test had run.
+TEMPO_TEST_ISOLATION = Dir.mktmpdir("tempo-test-iso")
+ENV["TMUX_TMPDIR"] = File.join(TEMPO_TEST_ISOLATION, "sock").tap { |d| Dir.mkdir(d) }
+ENV["XDG_DATA_HOME"] = File.join(TEMPO_TEST_ISOLATION, "data")
 %w[TMUX TMUX_PANE TMUX_PLUGIN_MANAGER_PATH].each { |k| ENV.delete(k) }
-at_exit { system("tmux", "kill-server", out: File::NULL, err: File::NULL) }
+Minitest.after_run do
+  system("tmux", "kill-server", out: File::NULL, err: File::NULL)
+  FileUtils.remove_entry(TEMPO_TEST_ISOLATION)
+end
 
 module TempoTest
   # A local git repo usable as a plugin source (specs are tried verbatim as

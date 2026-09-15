@@ -42,7 +42,7 @@ module Tempo
 
     # The target of a run line, quotes stripped, or nil for any other line.
     def self.run_line_target(line)
-      m = RUN_LINE.match(line)
+      m = RUN_LINE.match(line.scrub) # tmux reads a stray latin-1 byte fine; so must we (D34)
       m && m[1].sub(/\A(['"])(.*)\1\z/, '\2')
     end
 
@@ -198,7 +198,14 @@ module Tempo
     # lines.
     def run_line_targets
       @env.candidate_config_files.select { |f| File.file?(f) }.flat_map do |f|
-        File.readlines(f).filter_map do |line|
+        begin
+          lines = File.readlines(f)
+        rescue SystemCallError => e
+          # Same rule as the other two config readers (D34): a file init cannot
+          # read may hold the run line that decides its mode. Refuse.
+          raise ObserverError, "#{f} cannot be read (#{e.message})"
+        end
+        lines.filter_map do |line|
           target = Init.run_line_target(line)
           target && expand_home(target)
         end

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "open3"
-require "json"
 
 module Tempo
   # `tempo doctor`: one line per fact a first-run problem report needs.
@@ -62,15 +61,13 @@ module Tempo
       @ui.ok("ruby:        #{RUBY_VERSION} — #{verdict} (>= 3.0 required)")
     end
 
+    # The same gate every mutating verb runs (D35), so doctor names the same
+    # cause install does — git's own first line, not "found but not working".
     def check_git
-      out, status = Open3.capture2e("git", "--version")
-      if status.success?
-        @ui.ok("git:         #{out.strip} — OK")
-      else
-        @ui.err("git:         found but not working — FAIL")
-      end
-    rescue Errno::ENOENT
-      @ui.err("git:         not found in PATH — FAIL (install/update/clean need git)")
+      Git.preflight!
+      @ui.ok("git:         #{Open3.capture2e("git", "--version").first.strip} — OK")
+    rescue Git::Unavailable => e
+      @ui.err("git:         #{e.message} — FAIL (install/update/clean need git)")
     end
 
     def report_plugin_path
@@ -122,10 +119,9 @@ module Tempo
       state =
         if File.file?(path)
           begin
-            JSON.parse(File.read(path))
             "OK (#{Lockfile.read(path).size} plugins locked)"
-          rescue JSON::ParserError
-            "UNPARSEABLE (treated as empty)"
+          rescue Lockfile::Unparseable => e
+            "UNPARSEABLE — install/update/clean refuse until it is fixed (#{e.message})"
           end
         else
           "not yet written (created by the first install with a plugin to record)"

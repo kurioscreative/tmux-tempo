@@ -21,7 +21,9 @@ module Tempo
       out, status = Open3.capture2e("git", "--version")
       return if status.success?
 
-      raise Unavailable, "git is not usable: #{out.lines.first.to_s.strip}"
+      why = out.lines.first.to_s.strip
+      why = "`git --version` exited #{status.exitstatus} with no output" if why.empty?
+      raise Unavailable, "git is not usable: #{why}"
     rescue Errno::ENOENT
       raise Unavailable, "git is not in PATH"
     end

@@ -340,8 +340,9 @@ module Tempo
 
     # The three ways a lock can fail to be satisfiable offline, at most one
     # line per declared plugin (duplicate specs collapse, like
-    # Lockfile.write). A missing or unparseable lock reads as {}, so every
-    # declared plugin lands in the second bucket — which is correct.
+    # Lockfile.write). A missing lock reads as {}, so every declared plugin
+    # lands in the second bucket — which is correct; an unparseable one never
+    # gets here (preflight refused, D35).
     def frozen_violations(env)
       lock = Lockfile.read(env.lockfile_path)
       seen = {}
@@ -373,23 +374,25 @@ module Tempo
       "installed at #{commit ? commit[0, 12] : "?"} (#{state})"
     end
 
-    # Every mutating operation writes the lock, regenerates the artifact and
-    # files a generation, so the hot path and the lockfile reflect the run
-    # and the state just replaced stays reachable (D25). The lock is an input
-    # to that write (D33): only the pins in `refresh` — what update moved on
-    # purpose — are re-derived from disk. The generation is filed last,
-    # because it snapshots the lock bytes this call wrote.
     # Every mutating verb starts here (D34/D35), before it touches disk: git
     # must run, the lock must parse, the declared set must be observable.
     # Each raises; CLI refuses; nothing has moved yet. Returns the declared
-    # set. `rollback` deliberately skips the lock check — restoring the last
-    # recorded lock bytes is the way out of a conflicted lock.
+    # set. `rollback` runs no preflight at all — it needs neither git (flips
+    # are renames, the lock restore is a byte copy) nor a parseable lock
+    # (restoring recorded bytes is the way out of one) — which is what makes
+    # it an honest remedy for both refusals.
     def preflight(env)
       Git.preflight!
       Lockfile.read(env.lockfile_path)
       env.specs
     end
 
+    # Every mutating operation writes the lock, regenerates the artifact and
+    # files a generation, so the hot path and the lockfile reflect the run
+    # and the state just replaced stays reachable (D25). The lock is an input
+    # to that write (D33): only the pins in `refresh` — what update moved on
+    # purpose — are re-derived from disk. The generation is filed last,
+    # because it snapshots the lock bytes this call wrote.
     def finalize(env, op, refresh = [])
       Lockfile.write(env, refresh)
       Generator.new(env).generate

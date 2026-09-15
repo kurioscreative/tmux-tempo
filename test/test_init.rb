@@ -121,6 +121,15 @@ class TestInit < Minitest::Test
   # run-shell lines gets no help from init, so `tempo status` afterwards
   # shows an empty plugin list and reads as data loss. The hint is advisory
   # only — init never edits or deletes a run line it did not write.
+  # init is the third reader of config text; the other two scrub (D34).
+  def test_init_reads_a_config_with_a_stray_latin1_byte
+    File.binwrite(conf, "# caf\xE9\nset -g status on\n")
+    rc, out, = run_init
+    assert_equal 0, rc
+    refute_includes out, "invalid byte"
+    assert_includes File.read(conf), "run '"
+  end
+
   def test_plan_hints_at_manually_loaded_plugin_run_lines
     File.write(conf, <<~CONF)
       run-shell ~/.tmux/plugins/tmux-resurrect/resurrect.tmux

@@ -178,6 +178,22 @@ class TestAddRemove < Minitest::Test
     CONF
   end
 
+  # The run-line matcher is init's; it must scrub like every other reader,
+  # or `add` dies with a backtrace after writing the backup.
+  def test_append_survives_a_stray_latin1_byte_in_the_config
+    File.binwrite(conf, "# caf\xE9\nrun '~/.tmux/plugins/tempo/tempo'\n")
+
+    code, = add(repo)
+
+    assert_equal 0, code
+    lines = File.readlines(conf)
+    assert_equal 3, lines.size
+    # The odd line is a comment directly above the run line, so the
+    # declaration lands above the pair — and the user's byte is untouched.
+    assert_equal "set -g @plugin '#{repo}'\n", lines[0]
+    assert lines[1].b.include?("\xE9".b), "the user's bytes are written back untouched"
+  end
+
   def test_a_list_of_specs_all_land_above_the_run_line_in_order
     other = make_plugin_repo(@fixtures, "tmux-other-plugin")
     write_conf("run '~/.tmux/plugins/tempo/tempo'\n")

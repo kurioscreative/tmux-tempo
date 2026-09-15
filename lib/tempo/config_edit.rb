@@ -212,7 +212,7 @@ module Tempo
         # init writes a comment directly above its run line ("keep this at
         # the very bottom"); a declaration wedged between the two contradicts
         # the comment, so skip the comment block and insert above it.
-        at -= 1 while at.positive? && lines[at - 1].match?(/\A[ \t]*#/)
+        at -= 1 while at.positive? && lines[at - 1].scrub.match?(/\A[ \t]*#/)
         lines.insert(at, "#{decl}\n")
         # Truncating in place writes through a symlinked conf; replacing the
         # file would replace the link (D11/D14).
