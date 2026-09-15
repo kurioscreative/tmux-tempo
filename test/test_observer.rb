@@ -151,10 +151,53 @@ class TestObserver < Minitest::Test
     refute_includes out.string, "no plugins declared"
   end
 
-  def test_doctor_fails_when_the_observer_fails
-    ui, _, err = capture_ui
+  # Seeded first, so the artifact and fingerprint exist: the freshness check
+  # re-observes, and doctor must keep reporting past it rather than let the
+  # error out of a command that changes nothing.
+  def test_doctor_fails_but_still_reports_every_fact_when_the_observer_fails
+    Tempo::Commands.install(healthy_env, capture_ui.first)
+    ui, out, err = capture_ui
     with_mute_tmux { assert_equal 1, Tempo::Doctor.run(live_env, ui) }
     assert_includes err.string, "plugins:"
     assert_includes err.string, "FAIL"
+    assert_includes out.string, "freshness unknown"
+    assert_includes out.string, "lockfile:"
+  end
+
+  # The verbs that reach disk before they reach the declared set were the
+  # review findings on the first cut: each must refuse with nothing moved.
+  def test_rollback_flips_nothing_when_the_observer_fails
+    Tempo::Commands.install(healthy_env, capture_ui.first)
+    Tempo::Commands.clean(healthy_env, capture_ui.first) # generation 2, same links
+    assert_equal 2, Tempo::Generations.current(healthy_env)
+    dir = File.join(@plugins, "tmux-example-plugin")
+    link_before = File.readlink(dir)
+    lock_before = File.read(lock_path)
+
+    with_mute_tmux { assert_raises(Tempo::ObserverError) { Tempo::Commands.rollback(live_env, capture_ui.first, []) } }
+
+    assert_equal link_before, File.readlink(dir)
+    assert_equal lock_before, File.read(lock_path)
+    assert_equal 2, Tempo::Generations.current(live_env)
+  end
+
+  def test_add_leaves_the_config_byte_identical_when_the_observer_fails
+    other = make_plugin_repo(@fixtures, "tmux-other-plugin")
+    conf_before = File.read(@conf)
+
+    with_mute_tmux { assert_raises(Tempo::ObserverError) { Tempo::ConfigEdit.add(live_env, capture_ui.first, [other]) } }
+
+    assert_equal conf_before, File.read(@conf)
+    assert_empty Dir.glob("#{@conf}.bak-*")
+  end
+
+  def test_install_creates_no_directory_when_the_observer_fails
+    never = "#{File.join(@dir, "never")}/"
+    env = build_env(@dir, specs: nil, tpm_plugins_option: nil, plugin_path: never,
+                          candidate_config_files: [@conf], user_conf: @conf)
+
+    with_mute_tmux { assert_raises(Tempo::ObserverError) { Tempo::Commands.install(env, capture_ui.first) } }
+
+    refute File.directory?(never)
   end
 end

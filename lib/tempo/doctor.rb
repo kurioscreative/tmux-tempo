@@ -112,6 +112,9 @@ module Tempo
           "stale (regenerates on next tmux start or install/update/clean)"
         end
       @ui.ok("artifact:    #{@env.artifact_path} — #{state}")
+    rescue ObserverError
+      # report_plugins already failed the run for this; the report goes on.
+      @ui.ok("artifact:    #{@env.artifact_path} — freshness unknown (the declared set could not be observed)")
     end
 
     def report_lockfile

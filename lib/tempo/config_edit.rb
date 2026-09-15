@@ -87,6 +87,11 @@ module Tempo
         return 1
       end
 
+      # Observe before editing (D34): the install below would refuse on a
+      # failed observation, and a refusal must leave the config byte-identical
+      # — not "Added to ..." followed by "nothing was changed".
+      @env.specs
+
       # One backup per invocation, taken before the first edit. Backing up
       # inside the per-spec append gave `add a b` two copies with the same
       # per-second timestamp: the second overwrote the first, and the
@@ -200,6 +205,10 @@ module Tempo
       lines = File.file?(conf) ? File.readlines(conf) : []
       at = lines.rindex { |l| Init.manager_run_line?(l.chomp) }
       if at
+        # init writes a comment directly above its run line ("keep this at
+        # the very bottom"); a declaration wedged between the two contradicts
+        # the comment, so skip the comment block and insert above it.
+        at -= 1 while at.positive? && lines[at - 1].match?(/\A[ \t]*#/)
         lines.insert(at, "#{decl}\n")
         # Truncating in place writes through a symlinked conf; replacing the
         # file would replace the link (D11/D14).

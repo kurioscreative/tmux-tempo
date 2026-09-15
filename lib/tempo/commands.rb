@@ -42,9 +42,10 @@ module Tempo
     def install(env, ui, frozen: false)
       return frozen_enforce(env, ui) if frozen
 
+      specs = env.specs # observe first (D34): a refusal precedes every write, the mkdir included
       prepare_path(env, ui, verify_writable: true)
       Store.adopt(env, ui)
-      if env.specs.empty?
+      if specs.empty?
         # Nothing declared nearly always means tmux read a different config
         # than the user edited (the case doctor's `configs:` line exists for;
         # an observer that *failed* raises instead, D34). Cleaning here would

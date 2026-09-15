@@ -157,6 +157,27 @@ class TestAddRemove < Minitest::Test
     assert_equal "run-shell '~/bin/tmux-status.sh'\nset -g @plugin '#{repo}'\n", File.read(conf)
   end
 
+  # init's own layout: a comment annotates the run line. The declaration must
+  # not split the two (friction log #5 is literally this contradiction).
+  def test_append_lands_above_the_comment_that_annotates_the_run_line
+    write_conf(<<~CONF)
+      set -g status on
+
+      # Initialize the plugin manager (keep this at the very bottom)
+      run '~/.tmux/plugins/tempo/tempo'
+    CONF
+
+    add(repo)
+
+    assert_equal <<~CONF, File.read(conf)
+      set -g status on
+
+      set -g @plugin '#{repo}'
+      # Initialize the plugin manager (keep this at the very bottom)
+      run '~/.tmux/plugins/tempo/tempo'
+    CONF
+  end
+
   def test_a_list_of_specs_all_land_above_the_run_line_in_order
     other = make_plugin_repo(@fixtures, "tmux-other-plugin")
     write_conf("run '~/.tmux/plugins/tempo/tempo'\n")

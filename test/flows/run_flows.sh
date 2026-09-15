@@ -309,6 +309,7 @@ flow_observer_failure_changes_nothing() {
 	assert_contains "$out" "nothing was changed"
 	cmp -s "$HOME/tempo.lock" "$SANDBOX/lock.before" || fail "a failed observation rewrote the lockfile"
 	assert_dir "$PLUGINS_DIR/tmux-example-plugin"
+	[ "$(cat "$HOME/.local/share/tempo/generations/current")" = "1" ] || fail "a failed observation moved the generation marker"
 
 	printf '# edit\n' >> "$HOME/.tmux.conf" # stale fingerprint: the hot path would regenerate
 	PATH="$mute:$PATH" "$PLUGINS_DIR/tpm/bin/tempo" generate >/dev/null 2>&1 && fail "generate succeeded with a mute tmux"

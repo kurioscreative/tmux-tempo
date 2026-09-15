@@ -116,6 +116,11 @@ module Tempo
         return 1
       end
 
+      # Observe before the first flip (D34): a refusal must leave every link,
+      # the lock and the marker exactly as they were, not half of them.
+      declared = []
+      Store.each_declared(env) { |name| declared << name }
+
       links = man.fetch("links", {})
       unmanaged = man.fetch("unmanaged", [])
       links.each { |name, target| flip(env, ui, name, target) }
@@ -125,7 +130,7 @@ module Tempo
       # Rollback never edits tmux.conf, so a plugin declared after this
       # generation has nothing to roll back to. Say so; the next install
       # is what resolves it — inventing a lock entry for it would not.
-      Store.each_declared(env) do |name|
+      declared.each do |name|
         next if links.key?(name) || unmanaged.include?(name)
 
         ui.warn(%(  "#{name}" is declared but not in generation #{number}; run install))
