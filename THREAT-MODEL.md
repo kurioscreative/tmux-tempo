@@ -30,7 +30,9 @@ plugin you still declare: it only adds entries for plugins it just installed
 and drops entries for plugins you no longer declare, so a run that fails
 partway — no network, upstream gone, the locked commit unreachable — leaves
 your committed pins untouched for the next attempt. Moving a pin takes an
-explicit `tempo update` or `tempo rollback`. (What install promises is the
+explicit `tempo update` or `tempo rollback`. A lock that exists but does not
+parse — merge-conflict markers, say — stops `install` rather than being
+replaced by a fresh snapshot. (What install promises is the
 commit, not the shape of git's HEAD: the plugin directory is
 a link into the store, so restoring may land on a branch that happens to
 point at the locked commit, or on a detached HEAD. Either way the bytes that

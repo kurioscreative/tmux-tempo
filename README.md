@@ -428,6 +428,16 @@ Common first-run cases it (or the install output) explains:
   candidates it checked). Your installed plugins are safe: `install`
   deliberately skips its clean step when nothing is declared, precisely
   because this case is usually a config tmux never read.
+- **"git is not usable: …"** — `git --version` failed, and the line after
+  the colon is git's own explanation (on macOS, often an Xcode license that
+  has not been accepted). tempo refuses before doing anything, because
+  without git every clone would fail and every installed plugin would look
+  missing. Fix git, then run the command again.
+- **"tempo.lock … cannot be parsed"** — the lockfile exists but is not
+  valid JSON, most often merge-conflict markers after pulling dotfiles from
+  another machine. tempo refuses rather than overwrite it with a fresh
+  snapshot: resolve the conflict by hand, or `tempo rollback` to restore
+  the last lock tempo recorded.
 - **"cannot determine the declared plugin set"** — tmux would not answer
   (not in `PATH`, or no server could be started) or a config file could not
   be read. tempo refuses rather than treat an unanswered question as "no

@@ -109,8 +109,11 @@ is a set of small collaborators — the load-bearing ones:
   mutating command ends in `finalize`: write the lockfile, regenerate the
   artifact — so the hot path always reflects disk and the lock reflects the
   run — the lock is an input to that write, and only what `update` moved is
-  re-derived (D33). An `install` or `update` that finds nothing declared
-  returns before `finalize`: no lock write, no regeneration, no generation.
+  re-derived (D33). Every mutating command begins in `preflight`: git must
+  run, the lock must parse, the declared set must be observable, each a
+  refusal before anything is touched (D35). An `install` or `update` that
+  finds nothing declared returns before `finalize`: no lock write, no
+  regeneration, no generation.
 - **`ConfigEdit`** ([`lib/tempo/config_edit.rb`](lib/tempo/config_edit.rb)) —
   the only code that writes the user's tmux config (D22), behind `tempo add`
   and `tempo remove`. `add` appends the one canonical `@plugin` serialization;
