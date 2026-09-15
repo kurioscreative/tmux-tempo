@@ -40,9 +40,9 @@ module Tempo
     # satisfiable from what is already on disk, enforce it offline, and never
     # write the lock back.
     def install(env, ui, frozen: false)
+      specs = preflight(env)
       return frozen_enforce(env, ui) if frozen
 
-      specs = env.specs # observe first (D34): a refusal precedes every write, the mkdir included
       prepare_path(env, ui, verify_writable: true)
       Store.adopt(env, ui)
       if specs.empty?
@@ -74,7 +74,7 @@ module Tempo
 
       # Same guard as install (D33): an empty observation carries no
       # information, and writing the lock from it would erase every pin.
-      if env.specs.empty?
+      if preflight(env).empty?
         ui.ok(ZERO_PLUGIN_GUIDANCE)
         return ui.exit_code
       end
@@ -87,6 +87,7 @@ module Tempo
     end
 
     def clean(env, ui)
+      preflight(env)
       prepare_path(env, ui, verify_writable: false)
       clean_undeclared(env, ui)
       finalize(env, "clean")
@@ -117,10 +118,20 @@ module Tempo
     # (D34), and an empty declared set gets the same pointer install gives,
     # because an empty list here reads as "tempo lost my plugins".
     def status(env, ui)
-      lock = Lockfile.read(env.lockfile_path)
       ui.ok("plugins path: #{env.plugin_path}")
       ui.ok("lockfile:     #{env.lockfile_path}")
       ui.ok("")
+      begin
+        Git.preflight!
+      rescue Git::Unavailable => e
+        ui.warn("  #{e.message}; the installed state below is unreliable")
+      end
+      begin
+        lock = Lockfile.read(env.lockfile_path)
+      rescue Lockfile::Unparseable => e
+        ui.warn("  #{e.message}")
+        lock = {}
+      end
       begin
         list_declared(env, ui, lock)
       rescue ObserverError => e
@@ -368,6 +379,17 @@ module Tempo
     # to that write (D33): only the pins in `refresh` — what update moved on
     # purpose — are re-derived from disk. The generation is filed last,
     # because it snapshots the lock bytes this call wrote.
+    # Every mutating verb starts here (D34/D35), before it touches disk: git
+    # must run, the lock must parse, the declared set must be observable.
+    # Each raises; CLI refuses; nothing has moved yet. Returns the declared
+    # set. `rollback` deliberately skips the lock check — restoring the last
+    # recorded lock bytes is the way out of a conflicted lock.
+    def preflight(env)
+      Git.preflight!
+      Lockfile.read(env.lockfile_path)
+      env.specs
+    end
+
     def finalize(env, op, refresh = [])
       Lockfile.write(env, refresh)
       Generator.new(env).generate

@@ -18,12 +18,19 @@ module Tempo
   # plugin the observer could not see — leaves the pin exactly where it was,
   # or the lock is a log of what happened rather than a lock.
   class Lockfile
+    # The lock exists but does not parse — merge-conflict markers after a
+    # dotfiles pull are the realistic case. Reading it as {} would make every
+    # declared plugin "never seen" and re-snapshot disk over the user's file
+    # at exit 0 (D35): the third observer with the empty-on-failure shape.
+    class Unparseable < StandardError; end
+
     def self.read(path)
       return {} unless File.file?(path)
 
       JSON.parse(File.read(path)).fetch("plugins", {})
-    rescue JSON::ParserError
-      {}
+    rescue JSON::ParserError => e
+      raise Unparseable, "#{path} cannot be parsed (#{e.message.lines.first.to_s.strip[0, 80]}); " \
+                         "resolve it by hand, or `tempo rollback` restores the last recorded lock"
     end
 
     # `refresh` names the plugins whose pin this run moved on purpose. A

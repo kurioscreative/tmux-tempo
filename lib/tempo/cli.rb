@@ -53,9 +53,16 @@ module Tempo
 
       dispatch(command, args, env, ui, frozen: frozen, yes: yes)
     rescue ObserverError => e
-      # The one place this is caught (D34). Every verb consults the declared
-      # set before it mutates anything, so refusing here refuses early.
-      ui.err("tempo: cannot determine the declared plugin set: #{e.message}")
+      # The one place these are caught (D34/D35). Every mutating verb runs
+      # `Commands.preflight` before it touches disk, so refusing here refuses
+      # early, and "nothing was changed" is literally true.
+      refuse(ui, "cannot determine the declared plugin set: #{e.message}")
+    rescue Git::Unavailable, Lockfile::Unparseable => e
+      refuse(ui, e.message)
+    end
+
+    def self.refuse(ui, why)
+      ui.err("tempo: #{why}")
       ui.err("tempo: nothing was changed")
       1
     end

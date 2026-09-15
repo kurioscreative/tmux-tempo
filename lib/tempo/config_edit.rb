@@ -87,10 +87,10 @@ module Tempo
         return 1
       end
 
-      # Observe before editing (D34): the install below would refuse on a
-      # failed observation, and a refusal must leave the config byte-identical
-      # — not "Added to ..." followed by "nothing was changed".
-      @env.specs
+      # Preflight before editing (D34/D35): the install below would refuse,
+      # and a refusal must leave the config byte-identical — not "Added
+      # to ..." followed by "nothing was changed".
+      Commands.preflight(@env)
 
       # One backup per invocation, taken before the first edit. Backing up
       # inside the per-spec append gave `add a b` two copies with the same
@@ -160,7 +160,8 @@ module Tempo
       return unless File.file?(abs)
 
       depth = 0
-      File.foreach(abs).with_index(1) do |line, number|
+      File.foreach(abs).with_index(1) do |raw, number|
+        line = raw.scrub # a stray latin-1 byte must not hide a declaration (D34)
         if CONDITIONAL_OPEN.match?(line)
           depth += 1
         elsif CONDITIONAL_CLOSE.match?(line)
@@ -174,8 +175,11 @@ module Tempo
           @resolver.resolve_sourced(m[3].strip).each { |p| scan_file(p) }
         end
       end
-    rescue SystemCallError, ArgumentError # unreadable file / invalid bytes
-      nil
+    rescue SystemCallError => e
+      # Same rule as the scraper (D34): a file we cannot read holds
+      # declarations we cannot see, and `add` would duplicate one while
+      # `remove` would report it undeclared. Refuse instead.
+      raise ObserverError, "#{abs} cannot be read (#{e.message})"
     end
 
     def plugin_decl(abs, number, line, depth)

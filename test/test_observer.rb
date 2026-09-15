@@ -191,6 +191,28 @@ class TestObserver < Minitest::Test
     assert_empty Dir.glob("#{@conf}.bak-*")
   end
 
+  # ConfigEdit reads the same files with its own parser; it had the same
+  # empty-on-failure rescue (the audit behind D35).
+  def test_add_and_remove_refuse_when_a_sourced_file_cannot_be_read
+    skip "root reads everything" if Process.uid.zero?
+    sourced = File.join(@dir, "plugins.conf")
+    File.write(sourced, "set -g @plugin 'x/y'\n")
+    File.write(@conf, "source-file #{sourced}\nset -g @plugin '#{@repo}'\n")
+    File.chmod(0o000, sourced)
+    conf_before = File.read(@conf)
+
+    assert_raises(Tempo::ObserverError) { Tempo::ConfigEdit.remove(healthy_env, capture_ui.first, ["tmux-example-plugin"]) }
+    assert_raises(Tempo::ObserverError) { Tempo::ConfigEdit.add(healthy_env, capture_ui.first, ["a/b"]) }
+    assert_equal conf_before, File.read(@conf)
+  end
+
+  def test_remove_tolerates_invalid_bytes_like_the_scraper
+    File.binwrite(@conf, "# caf\xE9\nset -g @plugin '#{@repo}'\n")
+    ui, = capture_ui
+    assert_equal 0, Tempo::ConfigEdit.remove(healthy_env, ui, ["tmux-example-plugin"])
+    refute_includes File.read(@conf), "@plugin"
+  end
+
   def test_install_creates_no_directory_when_the_observer_fails
     never = "#{File.join(@dir, "never")}/"
     env = build_env(@dir, specs: nil, tpm_plugins_option: nil, plugin_path: never,

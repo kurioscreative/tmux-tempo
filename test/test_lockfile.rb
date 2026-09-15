@@ -280,9 +280,14 @@ class TestLockfile < Minitest::Test
     assert_equal git(dir, "rev-parse", "HEAD").strip, entry["commit"]
   end
 
-  def test_unparseable_lock_is_ignored
-    File.write(File.join(@dir, "tempo.lock"), "not json{")
+  # A lock that does not parse is a refusal, never an empty lock (D35):
+  # reading it as {} made every plugin "never seen" and re-snapshotted disk
+  # over the user's file. Missing is still {} — there is nothing to protect.
+  def test_unparseable_lock_is_a_refusal_and_a_missing_one_is_empty
     assert_equal({}, Tempo::Lockfile.read(File.join(@dir, "tempo.lock")))
+    File.write(File.join(@dir, "tempo.lock"), "not json{")
+    err = assert_raises(Tempo::Lockfile::Unparseable) { Tempo::Lockfile.read(File.join(@dir, "tempo.lock")) }
+    assert_includes err.message, "tempo rollback"
   end
 
   # Dotfiles case: ~/.tmux.conf is a symlink into a dotfiles repo — the

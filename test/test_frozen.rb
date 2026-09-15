@@ -141,8 +141,9 @@ class TestFrozen < Minitest::Test
     assert_equal delta_head, Tempo::Git.head_commit(plugin_dir("tmux-delta"))
   end
 
-  # A missing lock reads as {} (same as an unparseable one), so under frozen
-  # every declared plugin is a violation — nothing is "already fine".
+  # A missing lock reads as {} (an unparseable one is a refusal, D35), so
+  # under frozen every declared plugin is a violation — nothing is "already
+  # fine".
   def test_missing_lockfile_violates_every_declared_plugin
     bravo = make_plugin_repo(@fixtures, "tmux-bravo")
     Tempo::Commands.install(env_for(@repo, bravo), capture_ui.first)

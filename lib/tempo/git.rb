@@ -10,7 +10,21 @@ module Tempo
   module Git
     NO_PROMPT = { "GIT_TERMINAL_PROMPT" => "0" }.freeze
 
+    # git cannot run at all (D35). Without this gate a broken git made every
+    # clone report `download fail` — naming the network, not the cause — and
+    # every `installed?` answer false. Raised before a verb touches disk.
+    class Unavailable < StandardError; end
+
     module_function
+
+    def preflight!
+      out, status = Open3.capture2e("git", "--version")
+      return if status.success?
+
+      raise Unavailable, "git is not usable: #{out.lines.first.to_s.strip}"
+    rescue Errno::ENOENT
+      raise Unavailable, "git is not in PATH"
+    end
 
     # Verbatim URL first; GitHub shorthand expansion only on failure. Both
     # attempts target the same path — a failed clone must leave nothing behind
