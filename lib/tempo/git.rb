@@ -81,8 +81,15 @@ module Tempo
       capture(dir, "remote", "get-url", "origin")
     end
 
+    # Moves the work tree to `ref` without detaching HEAD (D36): when HEAD is
+    # on a branch, that branch is moved to `ref`, so the next `git pull`
+    # fast-forwards instead of failing with "not currently on a branch".
+    # `checkout -B`, not `reset --hard`: like a plain checkout it refuses
+    # rather than discard a conflicting local edit.
     def checkout(dir, ref)
-      system(NO_PROMPT, "git", "-C", dir, "checkout", "-q", ref,
+      branch = capture(dir, "symbolic-ref", "-q", "--short", "HEAD")
+      target = branch ? ["-B", branch, ref] : [ref]
+      system(NO_PROMPT, "git", "-C", dir, "checkout", "-q", *target,
              out: File::NULL, err: File::NULL)
     end
 

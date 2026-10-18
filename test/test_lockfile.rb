@@ -70,6 +70,75 @@ class TestLockfile < Minitest::Test
     assert_includes out.string, %("tmux-example-plugin" restored to #{locked[0, 12]})
   end
 
+  # --- enforcement keeps the branch attached (D36) ---------------------------
+  #
+  # The documented undo is "revert tempo.lock, then install". A bare
+  # `git checkout <sha>` would detach HEAD, and the next `git pull` — every
+  # `prefix + U` — would fail with "You are not currently on a branch".
+
+  # A plain clone that has run ahead of the lock: installed at C1 and locked
+  # there, upstream moved to C2, the clone pulled to C2 on master. The stray
+  # untracked file is the shape of a plugin that keeps local state in its
+  # tree (tmux-resurrect strategies, friction log day 2).
+  def plain_clone_ahead_of_lock
+    install(env_for(@repo))
+    locked = Tempo::Lockfile.read(lock_path).dig("tmux-example-plugin", "commit")
+    add_upstream_commit(@repo)
+    dir = File.join(@plugins, "tmux-example-plugin")
+    FileUtils.rm_rf(dir)
+    git(@dir, "clone", "-q", @repo, dir)
+    File.write(File.join(dir, "local-state"), "kept\n")
+    [dir, locked, git(@repo, "rev-parse", "HEAD").strip]
+  end
+
+  def test_restore_keeps_the_plugin_on_its_branch
+    dir, locked, = plain_clone_ahead_of_lock
+
+    ui, out, = capture_ui
+    assert_equal 0, Tempo::Commands.install(env_for(@repo), ui)
+
+    assert_equal locked, git(dir, "rev-parse", "HEAD").strip
+    assert_equal "refs/heads/master", git(dir, "symbolic-ref", "-q", "HEAD").strip
+    assert_includes out.string, %("tmux-example-plugin" restored to #{locked[0, 12]})
+  end
+
+  def test_update_after_a_restore_succeeds_and_moves_the_pin
+    dir, _locked, upstream = plain_clone_ahead_of_lock
+    Tempo::Commands.install(env_for(@repo), capture_ui.first)
+
+    ui, out, err = capture_ui
+    assert_equal 0, Tempo::Commands.update(env_for(@repo), ui, ["all"]), err.string
+
+    assert_includes out.string, %("tmux-example-plugin" update success)
+    assert_equal upstream, git(dir, "rev-parse", "HEAD").strip
+    assert_equal upstream, Tempo::Lockfile.read(lock_path).dig("tmux-example-plugin", "commit")
+  end
+
+  def test_restore_on_a_detached_head_still_reaches_the_commit
+    dir, locked, = plain_clone_ahead_of_lock
+    git(dir, "checkout", "-q", "--detach")
+
+    assert_equal 0, Tempo::Commands.install(env_for(@repo), capture_ui.first)
+    assert_equal locked, git(dir, "rev-parse", "HEAD").strip
+  end
+
+  # CHANGES exists only at C2, so moving to C1 would have to delete a file
+  # the user edited. Enforcement must refuse like `git checkout` does, never
+  # discard the edit the way `reset --hard` would.
+  def test_restore_refuses_rather_than_discarding_a_local_edit
+    dir, locked, upstream = plain_clone_ahead_of_lock
+    File.write(File.join(dir, "CHANGES"), "my edit\n")
+    lock_before = File.read(lock_path)
+
+    ui, _, err = capture_ui
+    assert_equal 1, Tempo::Commands.install(env_for(@repo), ui)
+
+    assert_includes err.string, %("tmux-example-plugin" restore fail: locked commit #{locked[0, 12]})
+    assert_equal upstream, git(dir, "rev-parse", "HEAD").strip
+    assert_equal "my edit\n", File.read(File.join(dir, "CHANGES"))
+    assert_equal lock_before, File.read(lock_path)
+  end
+
   def test_install_adds_missing_enforces_the_lock_and_cleans
     install(env_for(@repo))
     lock_path = File.join(@dir, "tempo.lock")
