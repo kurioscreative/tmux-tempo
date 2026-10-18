@@ -5,8 +5,8 @@ require "fileutils"
 module Tempo
   # Static generation (D2): Ruby writes a pure-sh loader containing the
   # fully resolved plugin list plus a freshness fingerprint; tmux server
-  # start executes the artifact and never touches Ruby. Generation only
-  # ever scans local files — never the network.
+  # start executes the artifact and never touches Ruby. Static generation
+  # only ever scans local files — never the network.
   class Generator
     # The runner preserves the contract's execution model: top-level *.tmux
     # files only, byte-wise sorted (licensed drop of locale glob order),
@@ -39,7 +39,7 @@ module Tempo
       FileUtils.mkdir_p(@env.data_dir)
       write_atomic(@env.artifact_path, artifact_body)
       File.chmod(0o755, @env.artifact_path)
-      # Fingerprint last: a crash mid-generation leaves a stale fingerprint,
+      # Fingerprint last: a crash mid-write leaves a stale fingerprint,
       # which just means "regenerate next time".
       write_atomic(@env.fingerprint_path, fingerprint_body)
     end

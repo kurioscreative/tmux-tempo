@@ -29,15 +29,17 @@ commit. It reads the lock before it acts and never rewrites the pin of a
 plugin you still declare: it only adds entries for plugins it just installed
 and drops entries for plugins you no longer declare, so a run that fails
 partway — no network, upstream gone, the locked commit unreachable — leaves
-your committed pins untouched for the next attempt. Moving a pin takes an
-explicit `tempo update` or `tempo rollback`. A lock that exists but does not
+your committed pins untouched for the next attempt. Only an explicit
+`tempo update` moves a pin; to undo one, restore the previous `tempo.lock`
+from your dotfiles history and run `install`. A lock that exists but does not
 parse — merge-conflict markers, say — stops `install` rather than being
-replaced by a fresh snapshot. (What install promises is the
-commit, not the shape of git's HEAD: the plugin directory is
-a link into the store, so restoring may land on a branch that happens to
-point at the locked commit, or on a detached HEAD. Either way the bytes that
-run are the locked ones.) `install --frozen` does the same offline and refuses
-to fetch anything.
+replaced by a fresh snapshot. (The plugin directory is a plain git clone, as
+under tpm. When it is on a branch, install moves that branch to the locked
+commit rather than detaching HEAD, so a later `tempo update` can still pull;
+if you have edited the plugin's files in a way that conflicts, install
+refuses and reports it instead of discarding your edit. Either way the bytes
+that run are the locked ones.) `install --frozen` does the same offline and
+refuses to fetch anything.
 
 What that buys you: an upstream **force-push** — the plugin's author
 rewriting already-published history so the same branch or tag name now
@@ -70,7 +72,7 @@ server and run shell commands, so a meaningful sandbox would have to forbid
 the things plugins exist to do. Browser extensions show the cost of
 retrofitting a permission model onto an ecosystem built without one: it
 breaks legitimate uses, and here it would mostly push people back to
-unmanaged manual clones, which are strictly worse.
+hand-made clones no tool keeps track of, which are strictly worse.
 
 The posture is **pin** instead: you decide what to run by writing the
 `@plugin` line, and tempo makes the pin strong. That is honestly weaker than

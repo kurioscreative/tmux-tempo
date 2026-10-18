@@ -24,10 +24,10 @@ config once and emits two files into `~/.local/share/tempo/`:
   broken plugin never stops the rest, plus the divergence-4 stderr warning for
   non-executable files.
 - **`fingerprint`** — a line-oriented record of everything that fed the
-  generation: the resolved plugin path, the live `@tpm_plugins` option value,
-  and `mtime size path` for every config file consulted — including files that
-  _didn't exist_, recorded as `m <path>`, so creating one later invalidates
-  too.
+  static generation: the resolved plugin path, the live `@tpm_plugins`
+  option value, and `mtime size path` for every config file consulted —
+  including files that _didn't exist_, recorded as `m <path>`, so creating
+  one later invalidates too.
 
 Compat is a property of the artifact, not the generator: the compat suite
 cannot tell the architecture changed because the `run` line sits in the same
@@ -100,7 +100,10 @@ is a set of small collaborators — the load-bearing ones:
   first, GitHub `git::@` shorthand expansion only on failure;
   `GIT_TERMINAL_PROMPT=0` everywhere so nothing can ever block on a credential
   prompt (a hang here wedges tmux's `run-shell`). Full-history clones like the
-  original (no `--depth`).
+  original (no `--depth`). Every operation runs in place in the plugin's own
+  clone; `checkout` moves the current branch to the target commit
+  (`checkout -B`) rather than detaching HEAD, and refuses rather than discard
+  a conflicting local edit (D36).
 - **`Commands`** ([`lib/tempo/commands.rb`](lib/tempo/commands.rb)) — one
   function per subcommand, output strings byte-compatible with the original
   (`"<name>" download success` etc.). Updates run in parallel threads with
@@ -113,7 +116,7 @@ is a set of small collaborators — the load-bearing ones:
   run, the lock must parse, the declared set must be observable, each a
   refusal before anything is touched (D35). An `install` or `update` that
   finds nothing declared returns before `finalize`: no lock write, no
-  regeneration, no generation.
+  regeneration.
 - **`ConfigEdit`** ([`lib/tempo/config_edit.rb`](lib/tempo/config_edit.rb)) —
   the only code that writes the user's tmux config (D22), behind `tempo add`
   and `tempo remove`. `add` appends the one canonical `@plugin` serialization;
@@ -128,95 +131,27 @@ is a set of small collaborators — the load-bearing ones:
   (stdout/stderr for CLI, `tmux run-shell "echo …"` for bindings) plus failure
   tracking: any `err` flips the exit code to 1, which is divergence 1 (the
   original lost failures in backgrounded subshells and always exited 0).
-- **`Store`** ([`lib/tempo/store.rb`](lib/tempo/store.rb)) — below.
-- **`Generations`** ([`lib/tempo/generations.rb`](lib/tempo/generations.rb)) —
-  below.
 - **`Lockfile`** ([`lib/tempo/lockfile.rb`](lib/tempo/lockfile.rb)) — below.
 
-## The plugin store (S2.1, D24)
+## Plugins on disk (D36)
 
-`<plugin-path>/<name>` is a symlink. The clone lives at
-`$XDG_DATA_HOME/tempo/store/<sha256(url)>/<commit>/`, so a plugin is stored
-once per `(url, commit)` no matter how many configs or names want it. The URL
-is never recovered by inverting the digest — it is read back from the entry's
-own `origin` remote, which is also what the lockfile reads through the link.
+Every plugin is a plain git clone at `<plugin-path>/<name>`, exactly where
+tpm puts it — so a tree tpm (or a hand-run `git clone`) left behind is already
+a tree tempo manages, with nothing to migrate. Every git operation runs in
+place in that clone:
 
-One invariant carries the design: **tempo never runs a mutating git command
-inside a filed entry.** Concretely:
+- **install** clones what is missing (`Git.clone_plugin`), then moves each
+  installed plugin onto its locked commit with `Git.checkout`, retrying once
+  after a `git fetch` when the commit is not local (never under `--frozen`).
+- **update** runs `git pull` in the clone; its output is the `    |`
+  indented report the compat contract pins.
+- **install --frozen** proves every locked commit is already present
+  (`git cat-file -e` in the clone, read-only) before it moves anything.
 
-- **install** clones into a staging dir under the store root, reads the commit
-  the clone actually landed on (unknowable before it lands), renames staging
-  into place — same filesystem, so atomic — and links.
-- **update** local-clones the current entry into staging (git hardlinks the
-  object database, so this is nearly free), points `origin` back at the real
-  upstream, and pulls **there**. That pull's own output is the `   |`
-  indented report the compat contract pins, so the report stays real git
-  output rather than a reconstruction. The result is filed as a _new_ entry
-  and the link flips; a pull landing on an already-filed commit files nothing.
-- **install**'s lock-enforcement step flips to the entry holding the locked
-  commit, and only builds that entry (staging clone + checkout, with the usual
-  fetch retry unless `--frozen`) when it has never been filed.
-
-Every flip is symlink-at-a-temp-name plus `rename`, never unlink-then-link:
-a tmux server starting mid-flip must never find a missing plugin directory.
-The hot path needs no regeneration for a flip, because the artifact bakes
-plugin-path strings and globs `*.tmux` at runtime (see above) — it never
-learns the store exists.
-
-**Adoption** is lazy and clean-only. A real directory left by tpm, an older
-tempo, or a hand-run `git clone` is moved into the store on the first mutating
-op, but only when the work tree is clean (untracked files included — adoption
-_shares_ whatever it moves) and HEAD is contained in a remote-tracking branch.
-Anything else keeps its real directory, warns once, and keeps working: update
-still pulls it in place, lock enforcement still checks out in place. The hybrid layout
-is supported indefinitely, not a migration deadline.
-
-## Generations and rollback (S2.2, D25)
-
-A generation is the pair that fully describes "which plugins are live": the
-lockfile bytes, and which store entry each declared plugin's symlink pointed
-at. Both live under `<data_dir>/generations/`:
-
-```
-current            the number the plugin path is standing on
-<N>/manifest.json  {version, op, time, links:{name=>entry}, unmanaged:[…]}
-<N>/tempo.lock     a byte copy of the lockfile as it stood
-```
-
-`manifest.json` is written last, so a crash mid-file leaves a directory that
-`Generations.numbers` simply does not count. Every mutating command files one:
-`install`/`update`/`clean` through `Commands.finalize` (after the lock
-write — the generation snapshots the bytes that call produced), and
-`install --frozen` directly, since it bypasses `finalize` and never writes the
-lock. Its generation records the _enforced_ state carrying whatever lock
-content it was handed, which is exactly what rolling back to it should
-reproduce. The exception is a run that mutates nothing: `install`, `update`
-and `install --frozen` all return early when no plugin is declared (D33), so
-there is no state change to file — and `--frozen` exits 1 doing so, because a
-CI gate must not pass vacuously.
-
-This is only affordable because of the store: a generation does not copy
-plugins, it records entry paths, so filing one costs a few hundred bytes and
-rolling back costs a `rename` per plugin.
-
-`rollback [N]` — bare means the generation below `current` — flips each link
-with the same temp-symlink-plus-`rename` the store uses, restores the stored
-lock bytes (**not** a re-snapshot of disk: `Lockfile.write` would produce the
-same content today, but restoring stored bytes is the honest semantic and
-immune to future drift), regenerates the artifact, and moves the marker.
-Rolling back files nothing, so a second rollback walks further down instead of
-ping-ponging. Two deliberate non-actions: it never edits `tmux.conf`, so a
-plugin declared after the target generation is _reported_ rather than
-invented; and a plugin kept as a plain directory (adoption declined) is
-recorded `unmanaged` and left alone, because there is no second copy to flip
-to.
-
-Retention is the constant **10** — no flag, no env var, no config. Pruning and
-store GC ride every new generation, which is what finally bounds the store D24
-left growing. GC deletes a store entry only when no kept generation references
-it **and** no live plugin-path symlink resolves into it; the second half
-matters, because the entry you are standing on can be older than the oldest
-kept generation.
+The data dir (`~/.local/share/tempo/`) holds only the two files the hot path
+needs, `load.sh` and `fingerprint`. Undo for a bad update is the lockfile you
+committed: restore the previous `tempo.lock` from your dotfiles repo and run
+`install`, which puts every plugin back on the commits it names.
 
 ## The lockfile (S1.8, the new capability)
 
@@ -225,21 +160,26 @@ name → `{url, branch, commit}`. The key design choice (D33): the lock is an
 **input** to every write, never a snapshot. `Lockfile.write(env, refresh)`
 carries the entry of every still-declared plugin over verbatim, observes an
 entry only for a declared plugin the lock has never seen (freshly cloned, or
-a pre-existing directory it adopted), drops the entries of plugins the same
-run just cleaned, and re-derives only the names in `refresh` — the plugins
-`update` actually updated. So there is still no remembered install-time
-state — the first time a plugin is seen, its entry is read off disk (`git
-remote get-url` + HEAD) — but a pin is never re-derived while the lock
-already has an answer, which is what lets a failed clone, a failed restore
-or a plugin the observer could not see leave the committed pin exactly where
-it was.
+a clone tpm or a hand-run `git clone` left there), drops the entries of
+plugins the same run just cleaned, and re-derives only the names in
+`refresh` — the plugins `update` actually updated. So there is still no
+remembered install-time state — the first time a plugin is seen, its entry
+is read off disk (`git remote get-url` + HEAD) — but a pin is never
+re-derived while the lock already has an answer, which is what lets a failed
+clone, a failed restore or a plugin the observer could not see leave the
+committed pin exactly where it was.
 `install` = install missing + enforce locked commits + clean undeclared
 (D32 — tpm's install could only do the first of those, having no lockfile to
-enforce). What enforcement promises is the commit, not the shape of HEAD:
-flipping onto an entry that was cloned lands on that entry's branch, while an
-entry built by checkout is detached. Only `update` (and `rollback`) moves a
-pin. Legacy `@tpm_plugins` entries lock identically to `@plugin`
-entries — they are the same after parsing.
+enforce). Enforcement keeps the branch attached (D36): when HEAD is on a
+branch, that branch is moved to the locked commit, so the next `update` —
+a plain `git pull` — fast-forwards from there. A detached checkout would make
+that pull fail with "not currently on a branch", turning every enforced
+plugin into one `update` can no longer move. A clone that is already detached
+stays detached, and a conflicting local edit makes the checkout refuse: that
+is a `restore fail` with the pin unchanged, deliberately not a
+`reset --hard` that would discard the edit. Only `update` moves a pin.
+Legacy `@tpm_plugins` entries lock identically to `@plugin` entries — they
+are the same after parsing.
 
 ## The interactive UX (the subtle part)
 
@@ -292,14 +232,8 @@ implementation has stopped being a held-out test.
   `bin/tempo generate`) forces regeneration.
 - **Stale artifact + no Ruby runs the stale set silently** — a deliberate
   D1 mitigation.
-- **Store entries are shared and writable** (D24): a plugin that caches
-  inside its own directory shares that cache with every config linked to the
-  same entry. Read-only entries would break such plugins outright, so
-  immutability is a rule about git state that tempo obeys, not a permission
-  bit. The escape hatch is the hybrid layout — a plugin kept as a real
-  directory is never shared.
-- **Reclaiming store entries is generations' job, not the store's.** The store
-  itself never deletes; entries go only when the last generation referencing
-  them is pruned (10 back) and nothing links them. So a box that never runs a
-  mutating op never reclaims — correct, and the same "regeneration is cheap,
-  a wrong state isn't" bias as the fingerprint.
+- **No cross-config dedup, no tool-level undo** (D36): two plugin paths
+  holding the same plugin hold two full clones, and tempo keeps no history of
+  its own to step back through. Undo is the committed `tempo.lock` plus
+  `install`, which needs the lock to be under version control and needs the
+  network for any commit the clone no longer has.
