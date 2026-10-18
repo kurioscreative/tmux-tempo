@@ -44,7 +44,6 @@ module Tempo
       return frozen_enforce(env, ui) if frozen
 
       prepare_path(env, ui, verify_writable: true)
-      Store.adopt(env, ui)
       if specs.empty?
         # Nothing declared nearly always means tmux read a different config
         # than the user edited (the case doctor's `configs:` line exists for;
@@ -80,7 +79,6 @@ module Tempo
       end
 
       prepare_path(env, ui, verify_writable: false)
-      Store.adopt(env, ui)
       updated = update_named(env, ui, names)
       finalize(env, updated)
       ui.exit_code
@@ -175,7 +173,7 @@ module Tempo
           next
         end
         ui.ok(%(Installing "#{spec.name}"))
-        if Store.install(env, spec)
+        if Git.clone_plugin(spec, env.plugin_dir(spec.name))
           ui.ok(%(  "#{spec.name}" download success))
         else
           ui.err(%(  "#{spec.name}" download fail))
@@ -206,7 +204,7 @@ module Tempo
       # re-derive from disk (D33).
       results = targets.map do |name|
         Thread.new do
-          out, ok = Store.update(env, name)
+          out, ok = Git.pull(env.plugin_dir(name))
           indented = out.split("\n").map { |l| "    | #{l}" }.join("\n")
           if ok
             ui.ok(%(  "#{name}" update success\n#{indented}))
@@ -261,12 +259,10 @@ module Tempo
         dir = env.plugin_dir(spec.name)
         next if Git.head_commit(dir) == entry["commit"]
 
-        # A flip when the locked entry is already filed; otherwise the entry is
-        # built in staging first. The fetch retry inside `place` is enforcement's
-        # only network touch, and frozen drops it — preflight has already
-        # proven the object is here.
-        url = entry["url"] || Git.remote_url(dir)
-        ok = Store.place(env, spec.name, url, entry["commit"], frozen: frozen)
+        # The fetch retry is enforcement's only network touch, and frozen
+        # drops it — preflight has already proven the object is here.
+        ok = Git.checkout(dir, entry["commit"])
+        ok ||= Git.fetch(dir) && Git.checkout(dir, entry["commit"]) unless frozen
         if ok
           ui.ok(%(  "#{spec.name}" restored to #{entry["commit"][0, 12]}))
         else
@@ -321,7 +317,7 @@ module Tempo
           out << [spec.name, "not installed"]
         elsif commit.nil?
           out << [spec.name, "not in the lockfile"]
-        elsif !Store.commit_available?(env, spec.name, lock.dig(spec.name, "url"), commit)
+        elsif !Git.commit_present?(env.plugin_dir(spec.name), commit)
           out << [spec.name, "locked commit #{commit[0, 12]} missing locally"]
         end
       end

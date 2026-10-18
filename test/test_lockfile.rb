@@ -47,11 +47,9 @@ class TestLockfile < Minitest::Test
                  after.dig("tmux-example-plugin", "commit")
   end
 
-  # Drift is produced through `update`, never by pulling in the plugin dir:
-  # under the store that dir is a symlink into a filed entry, and mutating an
-  # entry in place is the one thing the design forbids. The lock is then put
-  # back by hand, because the situation being tested is a committed lock that
-  # disk has run ahead of.
+  # Drift is produced through `update`, and the lock is then put back by
+  # hand: the situation being tested is a committed lock that disk has run
+  # ahead of.
   def test_install_returns_disk_to_the_locked_commit
     install(env_for(@repo))
     lock_path = File.join(@dir, "tempo.lock")

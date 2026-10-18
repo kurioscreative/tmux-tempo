@@ -24,9 +24,8 @@ module Tempo
       emit(message, @err)
     end
 
-    # Advisory: goes where errors go, but the operation still succeeded. Used
-    # for store adoptions that were declined — a plugin directory left in the
-    # older flat layout is a fact worth surfacing, never a failure.
+    # Advisory: goes where errors go, but the operation still succeeded —
+    # `status` reports what it could not determine this way.
     def warn(message)
       emit(message, @err)
     end
