@@ -300,7 +300,7 @@ Two consequences worth knowing:
   install/update, and only when the directory is a faithful
   checkout of its remote: no uncommitted or untracked files, and a HEAD some
   remote branch contains. Anything else keeps its real directory, keeps
-  working exactly as before, and says so once:
+  working exactly as before, and says so on every install and update:
 
   ```
     "tmux-menus" kept as a plain directory: uncommitted changes (outside rollback's reach; commit or stash them to make it adoptable)
@@ -403,10 +403,7 @@ fails loudly instead of being quietly ignored.
 
 Installing a tmux plugin means running someone else's code with your
 privileges, and tempo does not sandbox it. Nothing prompts you before an
-install either: a per-URL approval gates the _source_, not the code — it
-approves every commit ever fetched from that repository afterwards — and on
-the path that matters it would be asking you to confirm a URL you typed into
-your own config moments earlier. The lockfile is the real defense — it pins exact
+install either (THREAT-MODEL.md explains why). The lockfile is the real defense — it pins exact
 commits, `install --frozen` refuses to move off them, and every change shows up
 in your dotfiles diff. What that does and does not protect against is spelled
 out in [THREAT-MODEL.md](THREAT-MODEL.md); to report a vulnerability in tempo

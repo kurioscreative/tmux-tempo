@@ -39,9 +39,5 @@ module Tempo
     def github_shorthand_url
       "https://git::@github.com/#{url}"
     end
-
-    def ==(other)
-      other.is_a?(Spec) && raw == other.raw
-    end
   end
 end

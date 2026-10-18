@@ -31,10 +31,6 @@ module Tempo
       emit(message, @err)
     end
 
-    def failed?
-      @failed
-    end
-
     def exit_code
       @failed ? 1 : 0
     end

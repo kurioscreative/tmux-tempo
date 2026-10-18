@@ -14,7 +14,7 @@ module Tempo
         tempo update tmux-bar tmux-baz     update multiple plugins
     TEXT
 
-    # First-run guidance; only ever shown by `install` when the config
+    # First-run guidance; shown by `install` and `update` when the config
     # declares nothing (the compat contract never exercises that case, so
     # this stays additive to the INTERFACE.md §1.2 output API).
     ZERO_PLUGIN_GUIDANCE = <<~TEXT

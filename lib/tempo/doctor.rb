@@ -56,9 +56,10 @@ module Tempo
       major > 1 || (major == 1 && minor >= 9)
     end
 
+    # bin/tempo's ruby gate exits before an older Ruby gets here, so this
+    # can only ever report OK.
     def check_ruby
-      verdict = RUBY_VERSION.split(".").first.to_i >= 3 ? "OK" : "FAIL"
-      @ui.ok("ruby:        #{RUBY_VERSION} — #{verdict} (>= 3.0 required)")
+      @ui.ok("ruby:        #{RUBY_VERSION} — OK (>= 3.0 required)")
     end
 
     # The same gate every mutating verb runs (D35), so doctor names the same

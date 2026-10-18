@@ -19,8 +19,7 @@ module Tempo
         status                  declared plugins, lock state and generations
         doctor                  check requirements, paths and artifact health
 
-      options: --tmux-echo   deliver output through `tmux run-shell echo`
-               --frozen      (install) enforce the lockfile offline;
+      options: --frozen      (install) enforce the lockfile offline;
                              fails if it is not satisfiable, never writes it
                --yes, -y     (init) skip the confirmation prompt
     TEXT
