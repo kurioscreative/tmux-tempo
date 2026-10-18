@@ -7,8 +7,7 @@ require "json"
 # D35: two more observers with the empty-on-failure shape. A git that cannot
 # run made every clone "download fail" and every installed? false; a lock
 # that does not parse read as {} and was re-snapshotted over the user's file
-# at exit 0. Both now refuse before any verb touches disk, and `rollback`
-# stays the way out of a conflicted lock.
+# at exit 0. Both now refuse before any verb touches disk.
 class TestPreflight < Minitest::Test
   include TempoTest
 
@@ -45,7 +44,6 @@ class TestPreflight < Minitest::Test
   def env_for(*specs) = build_env(@dir, specs: specs)
   def conf_env = build_env(@dir, specs: nil, candidate_config_files: [@conf], user_conf: @conf)
   def lock_path = File.join(@dir, "tempo.lock")
-  def generation_count = Dir.glob(File.join(@dir, "data", "generations", "*", "manifest.json")).size
   def install(env = env_for(@repo)) = Tempo::Commands.install(env, capture_ui.first)
 
   # The real failure of 2026-09-15: Xcode's git refusing to run until its
@@ -79,17 +77,15 @@ class TestPreflight < Minitest::Test
     assert_includes err.message, "Xcode license"
     assert_equal lock_before, File.read(lock_path)
     assert_equal "sentinel\n", File.read(env.artifact_path)
-    assert_equal 1, generation_count
     assert File.directory?(File.join(@plugins, "tmux-example-plugin"))
   end
 
   # The replay: a fresh machine, broken git. The old code cloned nothing,
-  # printed "download fail", wrote an empty lock and filed a generation.
+  # printed "download fail" and wrote an empty lock.
   def test_a_fresh_machine_with_broken_git_records_nothing
     with_broken_git { assert_raises(Tempo::Git::Unavailable) { install } }
 
     refute File.exist?(lock_path)
-    assert_equal 0, generation_count
   end
 
   def test_update_clean_and_frozen_refuse_when_git_cannot_run
@@ -99,7 +95,6 @@ class TestPreflight < Minitest::Test
       assert_raises(Tempo::Git::Unavailable) { Tempo::Commands.clean(env_for(@repo), capture_ui.first) }
       assert_raises(Tempo::Git::Unavailable) { Tempo::Commands.install(env_for(@repo), capture_ui.first, frozen: true) }
     end
-    assert_equal 1, generation_count
   end
 
   def test_add_leaves_the_config_alone_when_git_cannot_run
@@ -153,9 +148,8 @@ class TestPreflight < Minitest::Test
     err = assert_raises(Tempo::Lockfile::Unparseable) { install(env_for(@repo, other)) }
 
     assert_includes err.message, "cannot be parsed"
-    assert_includes err.message, "tempo rollback"
+    assert_includes err.message, "dotfiles history"
     assert_equal bytes, File.read(lock_path)
-    assert_equal 1, generation_count
     refute File.exist?(File.join(@plugins, "tmux-other-plugin")), "nothing may be cloned before the lock parses"
   end
 
@@ -171,22 +165,6 @@ class TestPreflight < Minitest::Test
 
     assert_equal bytes, File.read(lock_path)
     assert_equal conf_before, File.read(@conf)
-    assert_equal 1, generation_count
-  end
-
-  # The remedy the message names: rollback restores recorded bytes and never
-  # parses the live lock, so it is reachable from the conflicted state.
-  def test_rollback_is_the_way_out_of_a_conflicted_lock
-    install
-    Tempo::Commands.clean(env_for(@repo), capture_ui.first) # generation 2
-    recorded = File.read(lock_path)
-    corrupt_lock
-
-    ui, = capture_ui
-    assert_equal 0, Tempo::Commands.rollback(env_for(@repo), ui, [])
-
-    assert_equal recorded, File.read(lock_path)
-    assert_equal 0, install, "install works again once the lock parses"
   end
 
   # Valid JSON in the wrong shape used to be a TypeError backtrace out of

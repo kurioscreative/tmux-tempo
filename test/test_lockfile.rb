@@ -173,17 +173,13 @@ class TestLockfile < Minitest::Test
     File.join(@dir, "tempo.lock")
   end
 
-  def generation_count
-    Dir.glob(File.join(@dir, "data", "generations", "*", "manifest.json")).size
-  end
 
   # The observer cannot tell "nothing declared" from "tmux unreachable" or
   # "read the wrong config", so an empty declared set must write nothing:
   # the run that already refuses to clean must not erase the pins either.
-  def test_install_with_nothing_declared_leaves_the_lock_and_generations_alone
+  def test_install_with_nothing_declared_leaves_the_lock_and_artifact_alone
     install(env_for(@repo))
     lock_before = File.read(lock_path)
-    assert_equal 1, generation_count
     env = env_for
     # The artifact is the most dangerous of the skipped writes: regenerating
     # from an empty observation would bake an empty load.sh with a fresh
@@ -195,7 +191,6 @@ class TestLockfile < Minitest::Test
 
     assert_includes out.string, "No plugins declared"
     assert_equal lock_before, File.read(lock_path)
-    assert_equal 1, generation_count
     assert_equal "sentinel\n", File.read(env.artifact_path)
   end
 
@@ -212,7 +207,6 @@ class TestLockfile < Minitest::Test
 
     assert_includes err.string, "frozen: no plugins declared"
     assert_equal lock_before, File.read(lock_path)
-    assert_equal 1, generation_count
     assert_equal "sentinel\n", File.read(env.artifact_path)
     # Before the guard, an empty set under --frozen had no violations and so
     # went straight to clean_undeclared: every installed plugin deleted, exit 0.
@@ -282,7 +276,6 @@ class TestLockfile < Minitest::Test
 
     assert_includes out.string, "No plugins declared"
     assert_equal lock_before, File.read(lock_path)
-    assert_equal 1, generation_count
     assert_equal "sentinel\n", File.read(env.artifact_path)
   end
 
@@ -356,7 +349,7 @@ class TestLockfile < Minitest::Test
     assert_equal({}, Tempo::Lockfile.read(File.join(@dir, "tempo.lock")))
     File.write(File.join(@dir, "tempo.lock"), "not json{")
     err = assert_raises(Tempo::Lockfile::Unparseable) { Tempo::Lockfile.read(File.join(@dir, "tempo.lock")) }
-    assert_includes err.message, "tempo rollback"
+    assert_includes err.message, "dotfiles history"
   end
 
   # Dotfiles case: ~/.tmux.conf is a symlink into a dotfiles repo — the

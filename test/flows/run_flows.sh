@@ -314,7 +314,6 @@ flow_observer_failure_changes_nothing() {
 	assert_contains "$out" "nothing was changed"
 	cmp -s "$HOME/tempo.lock" "$SANDBOX/lock.before" || fail "a failed observation rewrote the lockfile"
 	assert_dir "$PLUGINS_DIR/tmux-example-plugin"
-	[ "$(cat "$HOME/.local/share/tempo/generations/current")" = "1" ] || fail "a failed observation moved the generation marker"
 
 	printf '# edit\n' >> "$HOME/.tmux.conf" # stale fingerprint: the hot path would regenerate
 	PATH="$mute:$PATH" "$PLUGINS_DIR/tpm/bin/tempo" generate >/dev/null 2>&1 && fail "generate succeeded with a mute tmux"
@@ -335,10 +334,8 @@ flow_zero_plugin_guidance() {
 	[ "$rc" -eq 0 ] || fail "install_plugins exited $rc"
 	assert_contains "$out" "@plugin"
 	assert_contains "$out" "No plugins declared"
-	# An empty observation writes nothing (D33): no empty lock in the dotfiles,
-	# no "0 plugin(s)" generation.
+	# An empty observation writes nothing (D33): no empty lock in the dotfiles.
 	[ ! -e "$HOME/tempo.lock" ] || fail "zero-plugin install wrote a lockfile"
-	[ ! -d "$HOME/.local/share/tempo/generations" ] || fail "zero-plugin install filed a generation"
 }
 
 # Negative guard for the contract output API: with a plugin declared, the
@@ -516,11 +513,13 @@ flow_store_adopts_existing_flat_clone() {
 	assert_file "$HOME/plugins_ran.log"
 }
 
-# Rollback, judged by what actually runs. The fixture's `*.tmux` prints a
-# version marker, so a real tmux server executing it after the rollback is the
-# only assertion that cannot be faked by a lock-only revert: the plugin must
-# emit its PRE-update line again.
-flow_rollback_reverts_plugin_content() {
+# The documented undo — put the old tempo.lock back, run install — judged by
+# what actually runs. The fixture's `*.tmux` prints a version marker, so a
+# real tmux server executing it after the undo is the only assertion that
+# cannot be faked by a lock-only revert: the plugin must emit its PRE-update
+# line again. A second update afterwards proves the undo left the plugin on
+# its branch (D36).
+flow_undo_by_restoring_the_lock() {
 	install_tempo_copy "$PLUGINS_DIR/tpm"
 	_repo="$FIXTURES/tmux-example-plugin"
 	printf '#!/bin/sh\necho "v1 $0" >> "$HOME/plugins_ran.log"\n' > "$_repo/tmux-example-plugin.tmux"
@@ -544,18 +543,22 @@ flow_rollback_reverts_plugin_content() {
 	reload_and_wait_for_plugins
 	grep -q '^v2 ' "$HOME/plugins_ran.log" || fail "the server did not run v2 after the update"
 
-	out="$("$PLUGINS_DIR/tpm/bin/tempo" rollback 2>&1)"
+	cp "$SANDBOX/lock.v1" "$HOME/tempo.lock"
+	out="$("$PLUGINS_DIR/tpm/bin/tempo" install 2>&1)"
 	rc=$?
-	[ "$rc" -eq 0 ] || { fail "rollback exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
-	assert_contains "$out" "rolled back to generation 1"
-	cmp -s "$HOME/tempo.lock" "$SANDBOX/lock.v1" || fail "rollback did not restore the lockfile"
-	cmp -s "$HOME/.local/share/tempo/load.sh" "$SANDBOX/art.v1" || fail "rollback changed the artifact"
-	assert_store_link "$PLUGINS_DIR/tmux-example-plugin"
+	[ "$rc" -eq 0 ] || { fail "install after restoring the lock exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
+	assert_contains "$out" '"tmux-example-plugin" restored to'
+	cmp -s "$HOME/tempo.lock" "$SANDBOX/lock.v1" || fail "install rewrote the restored lockfile"
+	cmp -s "$HOME/.local/share/tempo/load.sh" "$SANDBOX/art.v1" || fail "the undo changed the artifact"
 
 	reload_and_wait_for_plugins
 	grep -q '^v1 ' "$HOME/plugins_ran.log" ||
-		{ fail "the server did not run the pre-update plugin content after rollback"; \
+		{ fail "the server did not run the pre-update plugin content after the undo"; \
 			sed 's/^/      | /' "$HOME/plugins_ran.log"; }
+
+	out="$("$PLUGINS_DIR/tpm/bin/tempo" update all 2>&1)"
+	rc=$?
+	[ "$rc" -eq 0 ] || { fail "update after the undo exited $rc"; printf '%s\n' "$out" | sed 's/^/      | /'; }
 }
 
 # `prefix + I` end to end through a real server: bindings/install_plugins
@@ -659,7 +662,7 @@ for _test in \
 	flow_frozen_violation_stays_offline \
 	flow_store_backed_install_runs_through_the_symlink \
 	flow_store_adopts_existing_flat_clone \
-	flow_rollback_reverts_plugin_content \
+	flow_undo_by_restoring_the_lock \
 	flow_binding_install_never_prompts \
 	flow_add_declares_and_boots_the_plugin \
 	flow_remove_stops_the_plugin_from_running; do

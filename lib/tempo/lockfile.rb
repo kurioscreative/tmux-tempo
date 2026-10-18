@@ -24,7 +24,7 @@ module Tempo
     # at exit 0 (D35): the third observer with the empty-on-failure shape.
     class Unparseable < StandardError; end
 
-    REMEDY = "resolve it by hand, or `tempo rollback` restores the last recorded lock"
+    REMEDY = "resolve it by hand, or restore it from your dotfiles history"
 
     def self.read(path)
       return {} unless File.file?(path)

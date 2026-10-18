@@ -59,7 +59,7 @@ module Tempo
       install_missing(env, ui)
       restore_locked(env, ui)
       clean_undeclared(env, ui)
-      finalize(env, "install")
+      finalize(env)
       ui.exit_code
     end
 
@@ -82,7 +82,7 @@ module Tempo
       prepare_path(env, ui, verify_writable: false)
       Store.adopt(env, ui)
       updated = update_named(env, ui, names)
-      finalize(env, "update", updated)
+      finalize(env, updated)
       ui.exit_code
     end
 
@@ -90,28 +90,13 @@ module Tempo
       preflight(env)
       prepare_path(env, ui, verify_writable: false)
       clean_undeclared(env, ui)
-      finalize(env, "clean")
+      finalize(env)
       ui.exit_code
     end
 
     def generate(env, _ui = nil)
       Generator.new(env).generate
       0
-    end
-
-    # The undo for a bad `prefix + U`. Bare = the generation below the current
-    # one; `rollback <N>` targets one by number. It rewrites the lockfile (that
-    # IS the point — the dotfiles diff shows the revert) but never touches
-    # tmux.conf.
-    def rollback(env, ui, args)
-      target = args.find { |a| a.match?(/\A\d+\z/) }
-      number = target ? target.to_i : Generations.previous(env)
-      unless number
-        ui.err("no earlier generation to roll back to")
-        return 1
-      end
-
-      Generations.rollback(env, ui, number)
     end
 
     # A report, not a check: an observer failure is one more fact to print
@@ -137,7 +122,6 @@ module Tempo
       rescue ObserverError => e
         ui.warn("  plugins could not be determined: #{e.message}")
       end
-      show_generations(env, ui)
       0
     end
 
@@ -152,23 +136,6 @@ module Tempo
 
         seen[spec.name] = true
         ui.ok("  #{spec.name}: #{status_line(env, lock, spec)}")
-      end
-    end
-
-    # Generation history, newest first, `*` marking the one the plugin path is
-    # standing on. Silent when there is none — a box that has never run a
-    # mutating op has nothing to say here.
-    def show_generations(env, ui)
-      known = Generations.numbers(env)
-      return if known.empty?
-
-      here = Generations.current(env)
-      ui.ok("")
-      ui.ok("generations (newest first, keeping #{Generations::KEEP}):")
-      known.reverse_each do |n|
-        man = Generations.manifest(env, n) || {}
-        ui.ok(format("  %s %-4d %s  %-8s %d plugin(s)",
-                     n == here ? "*" : " ", n, man["time"], man["op"], man.fetch("links", {}).size))
       end
     end
 
@@ -334,7 +301,6 @@ module Tempo
       restore_locked(env, ui, frozen: true)
       clean_undeclared(env, ui) # local-only, so frozen still runs it
       Generator.new(env).generate # the hot path must reflect enforced disk
-      Generations.file(env, "install-frozen")
       ui.exit_code
     end
 
@@ -377,26 +343,20 @@ module Tempo
     # Every mutating verb starts here (D34/D35), before it touches disk: git
     # must run, the lock must parse, the declared set must be observable.
     # Each raises; CLI refuses; nothing has moved yet. Returns the declared
-    # set. `rollback` runs no preflight at all — it needs neither git (flips
-    # are renames, the lock restore is a byte copy) nor a parseable lock
-    # (restoring recorded bytes is the way out of one) — which is what makes
-    # it an honest remedy for both refusals.
+    # set.
     def preflight(env)
       Git.preflight!
       Lockfile.read(env.lockfile_path)
       env.specs
     end
 
-    # Every mutating operation writes the lock, regenerates the artifact and
-    # files a generation, so the hot path and the lockfile reflect the run
-    # and the state just replaced stays reachable (D25). The lock is an input
+    # Every mutating operation writes the lock and regenerates the artifact,
+    # so the hot path and the lockfile reflect the run. The lock is an input
     # to that write (D33): only the pins in `refresh` — what update moved on
-    # purpose — are re-derived from disk. The generation is filed last,
-    # because it snapshots the lock bytes this call wrote.
-    def finalize(env, op, refresh = [])
+    # purpose — are re-derived from disk.
+    def finalize(env, refresh = [])
       Lockfile.write(env, refresh)
       Generator.new(env).generate
-      Generations.file(env, op)
     end
   end
 end

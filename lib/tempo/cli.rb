@@ -14,9 +14,8 @@ module Tempo
         remove <name>           delete a plugin's declaration from your config
         update all|<name>...    update plugins (parallel)
         clean                   remove undeclared plugin dirs
-        rollback [N]            undo: flip back to the previous generation (or N)
         generate                regenerate the loader artifact
-        status                  declared plugins, lock state and generations
+        status                  declared plugins and their lock state
         doctor                  check requirements, paths and artifact health
 
       options: --frozen      (install) enforce the lockfile offline;
@@ -74,7 +73,6 @@ module Tempo
       when "update" then Commands.update(env, ui, args)
       when "clean" then Commands.clean(env, ui)
       when "generate" then Commands.generate(env)
-      when "rollback" then Commands.rollback(env, ui, args)
       when "status" then Commands.status(env, ui)
       # Not in USAGE: an internal call from bindings/update_plugins, never typed.
       when "update-list" then Commands.update_list(env, ui)

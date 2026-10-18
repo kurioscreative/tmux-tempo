@@ -40,7 +40,6 @@ class TestObserver < Minitest::Test
   end
 
   def lock_path = File.join(@dir, "tempo.lock")
-  def generation_count = Dir.glob(File.join(@dir, "data", "generations", "*", "manifest.json")).size
 
   # Swap a Tmux module function for the duration of the block. Tmux uses
   # module_function, so its singleton methods are the call surface.
@@ -73,7 +72,6 @@ class TestObserver < Minitest::Test
 
     assert_equal lock_before, File.read(lock_path)
     assert_equal "sentinel\n", File.read(env.artifact_path)
-    assert_equal 1, generation_count
     assert File.directory?(File.join(@plugins, "tmux-example-plugin"))
   end
 
@@ -166,21 +164,6 @@ class TestObserver < Minitest::Test
 
   # The verbs that reach disk before they reach the declared set were the
   # review findings on the first cut: each must refuse with nothing moved.
-  def test_rollback_flips_nothing_when_the_observer_fails
-    Tempo::Commands.install(healthy_env, capture_ui.first)
-    Tempo::Commands.clean(healthy_env, capture_ui.first) # generation 2, same links
-    assert_equal 2, Tempo::Generations.current(healthy_env)
-    dir = File.join(@plugins, "tmux-example-plugin")
-    link_before = File.readlink(dir)
-    lock_before = File.read(lock_path)
-
-    with_mute_tmux { assert_raises(Tempo::ObserverError) { Tempo::Commands.rollback(live_env, capture_ui.first, []) } }
-
-    assert_equal link_before, File.readlink(dir)
-    assert_equal lock_before, File.read(lock_path)
-    assert_equal 2, Tempo::Generations.current(live_env)
-  end
-
   def test_add_leaves_the_config_byte_identical_when_the_observer_fails
     other = make_plugin_repo(@fixtures, "tmux-other-plugin")
     conf_before = File.read(@conf)

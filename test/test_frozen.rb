@@ -187,7 +187,7 @@ class TestFlagParsing < Minitest::Test
   def test_frozen_is_rejected_on_commands_that_do_not_have_it
     assert_equal 1, run_cli("clean", "--frozen").first
     assert_equal 1, run_cli("status", "--frozen").first
-    assert_equal 1, run_cli("rollback", "--frozen").first
+    assert_equal 1, run_cli("generate", "--frozen").first
   end
 
   def test_usage_advertises_frozen_on_install
