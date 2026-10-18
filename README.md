@@ -18,17 +18,17 @@ bash and git. If that is all you want, keep it; your config will not care.
 tempo exists for the day a plugin update breaks your setup, or a new
 machine needs your exact plugin set back. What it adds and what it costs:
 
-| What                        | tempo                                                         | tpm                                 | the honest cost                                                                |
-| --------------------------- | ------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------ |
-| Config lines & key bindings | same `@plugin` lines, same `run` line, same keys               | —                                   | none: that is the point (what the keys *do* is the row below)                  |
-| Reproducible plugin sets    | `tempo.lock` (exact commits), enforced by `install`            | no                                  | one more file to commit to your dotfiles                                       |
-| Undo a bad update           | `rollback` — offline, instant, 10 generations kept            | re-clone by hand                    | a floor of superseded clones kept on disk per plugin (bounded, then reclaimed) |
-| Failure reporting           | real exit codes, `doctor`, `status`                           | exit 0 no matter what               | a script that relied on tpm always exiting 0 needs a look                      |
+| What                        | tempo                                                         | tpm                                   | the honest cost                                                                                           |
+| --------------------------- | ------------------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Config lines & key bindings | same `@plugin` lines, same `run` line, same keys              | —                                     | none: that is the point (what the keys _do_ is the row below)                                             |
+| Reproducible plugin sets    | `tempo.lock` (exact commits), enforced by `install`           | no                                    | one more file to commit to your dotfiles                                                                  |
+| Undo a bad update           | `rollback` — offline, instant, 10 generations kept            | re-clone by hand                      | a floor of superseded clones kept on disk per plugin (bounded, then reclaimed)                            |
+| Failure reporting           | real exit codes, `doctor`, `status`                           | exit 0 no matter what                 | a script that relied on tpm always exiting 0 needs a look                                                 |
 | `prefix + I` semantics      | reconciles: adds, enforces the lock, removes undeclared       | adds only — it has no lock to enforce | **the one binding that behaves differently**: a plugin you updated by hand goes back to its locked commit |
-| Declaring plugins           | `add`, `remove` from the CLI                                  | edit the config by hand             | none: the config file is still the manifest, and hand-editing still works      |
-| Runtime dependencies        | sh + git, **Ruby ≥ 3.0 for management operations**            | bash + git only                     | the Ruby dependency is real; tpm's absence of it is a genuine tpm advantage    |
-| Startup (every reload)      | executes one pregenerated `sh` artifact                       | re-parses config, re-queries tmux   | tempo's parsing cost moves to config-change time and is paid in Ruby (below)   |
-| Field history               | new in 2026, pinned to tpm by a 30-test held-out compat suite | the original, ~a decade in the wild | maturity favors tpm; the compat suite is the mitigation, not a substitute      |
+| Declaring plugins           | `add`, `remove` from the CLI                                  | edit the config by hand               | none: the config file is still the manifest, and hand-editing still works                                 |
+| Runtime dependencies        | sh + git, **Ruby ≥ 3.0 for management operations**            | bash + git only                       | the Ruby dependency is real; tpm's absence of it is a genuine tpm advantage                               |
+| Startup (every reload)      | executes one pregenerated `sh` artifact                       | re-parses config, re-queries tmux     | tempo's parsing cost moves to config-change time and is paid in Ruby (below)                              |
+| Field history               | new in 2026, pinned to tpm by a 30-test held-out compat suite | the original, ~a decade in the wild   | maturity favors tpm; the compat suite is the mitigation, not a substitute                                 |
 
 ### Measured
 
@@ -403,7 +403,7 @@ fails loudly instead of being quietly ignored.
 
 Installing a tmux plugin means running someone else's code with your
 privileges, and tempo does not sandbox it. Nothing prompts you before an
-install either: a per-URL approval gates the *source*, not the code — it
+install either: a per-URL approval gates the _source_, not the code — it
 approves every commit ever fetched from that repository afterwards — and on
 the path that matters it would be asking you to confirm a URL you typed into
 your own config moments earlier. The lockfile is the real defense — it pins exact
@@ -513,15 +513,14 @@ suite and the vendored original): every monorepo commit that touched
 still a deliberate act — a script builds and verifies the split locally,
 and pushing is a separate explicit step:
 
-1. In the monorepo, run all three gates and make sure they are green. The
-   `env -u` prefix is not optional — without it a suite run from inside tmux
-   inherits `TMUX_PLUGIN_MANAGER_PATH` and deletes your real plugin links:
+1. In the monorepo, run all three gates and make sure they are green. Each
+   harness isolates its own tmux server, plugin path and data dir, so they
+   are safe to run from inside a live tmux session:
 
    ```sh
-   ISO="env -u TMUX -u TMUX_PANE -u TMUX_PLUGIN_MANAGER_PATH TMUX_TMPDIR=$(mktemp -d)"
-   (cd tempo && $ISO ruby -Ilib -Itest test/run_all.rb)
-   $ISO sh tempo/test/flows/run_flows.sh
-   $ISO TPM_UNDER_TEST=./tempo ./compat-tests/run.sh
+   (cd tempo && ruby -Ilib -Itest test/run_all.rb)
+   sh tempo/test/flows/run_flows.sh
+   TPM_UNDER_TEST=./tempo ./compat-tests/run.sh
    ```
 
 2. `sh tools/publish-tempo.sh` (in the monorepo) — splits, maps author
