@@ -78,7 +78,10 @@ class TestInit < Minitest::Test
     assert_equal before, File.read(conf)
     assert File.symlink?(tpm)
     assert_equal File.realpath(ROOT), File.realpath(tpm)
-    backups = Dir.glob(File.join(@dir, ".tmux", "plugins", "tpm.orig*"))
+    # Beside the plugin path, not in it: install cleans every undeclared dir
+    # in the plugin path, so a backup there would not survive prefix + I.
+    assert_empty Dir.glob(File.join(@dir, ".tmux", "plugins", "tpm.orig*"))
+    backups = Dir.glob(File.join(@dir, ".tmux", "tpm.orig*"))
     assert_equal 1, backups.size
     assert_equal "original tpm\n", File.read(File.join(backups.first, "marker"))
   end

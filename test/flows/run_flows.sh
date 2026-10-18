@@ -394,12 +394,14 @@ flow_init_drop_in() {
 	[ "$rc" -eq 0 ] || fail "init exited $rc"
 	cmp -s "$HOME/.tmux.conf" "$SANDBOX/conf.before" || fail "drop-in mode changed the conf"
 	[ -L "$PLUGINS_DIR/tpm" ] || fail "tpm path is not a symlink"
-	ls -d "$PLUGINS_DIR/"tpm.orig* >/dev/null 2>&1 || fail "original tpm not backed up"
+	ls -d "$PLUGINS_DIR/../"tpm.orig* >/dev/null 2>&1 || fail "original tpm not backed up"
 	start_tmux || return 1
 	out="$("$PLUGINS_DIR/tpm/bin/install_plugins" 2>&1)"
 	rc=$?
 	[ "$rc" -eq 0 ] || fail "install_plugins exited $rc"
 	assert_contains "$out" '"tmux-example-plugin" download success'
+	# install cleans undeclared dirs in the plugin path; the backup must not be one
+	ls -d "$PLUGINS_DIR/../"tpm.orig* >/dev/null 2>&1 || fail "install removed the tpm backup"
 }
 
 # Clean after a fresh init must remove orphans but never the manager's own

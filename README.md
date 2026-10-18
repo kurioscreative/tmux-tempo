@@ -93,7 +93,7 @@ tmux required. It reads your tmux config files (`~/.tmux.conf`, the XDG
 
 - **Drop-in mode** — your config already has a `run '~/.tmux/plugins/tpm/tpm'`
   line (you are a tpm user). Whatever currently occupies
-  `~/.tmux/plugins/tpm` is **renamed aside** to `tpm.orig-<timestamp>`, and
+  `~/.tmux/plugins/tpm` is **renamed aside** to `~/.tmux/tpm.orig-<timestamp>`, and
   `~/.tmux/plugins/tpm` becomes a symlink to your checkout. **Your tmux
   config is not modified at all** — the existing run line now resolves into
   tempo.
@@ -160,7 +160,7 @@ git clone https://github.com/kurioscreative/tmux-tempo.git ~/.tmux/plugins/tempo
 ```
 
 `init` detects your existing `run '.../tpm/tpm'` line and takes drop-in
-mode: your old tpm clone is renamed to `~/.tmux/plugins/tpm.orig-<timestamp>`
+mode: your old tpm clone is renamed to `~/.tmux/tpm.orig-<timestamp>`
 (kept, not deleted — the migration is reversible) and the tpm path is
 symlinked at the tempo checkout. No `rm -rf`, no config edits.
 
@@ -460,7 +460,7 @@ you the pieces:
 
   ```sh
   rm ~/.tmux/plugins/tpm
-  mv ~/.tmux/plugins/tpm.orig-<timestamp> ~/.tmux/plugins/tpm
+  mv ~/.tmux/tpm.orig-<timestamp> ~/.tmux/plugins/tpm
   ```
 
 - **Fresh mode**: delete the symlink and drop the run line `init` appended

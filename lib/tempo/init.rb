@@ -103,12 +103,15 @@ module Tempo
 
     # The config already runs `.../tpm/tpm`: take over that path. The
     # config file is not touched; whatever occupies the path is renamed
-    # aside — backed up regardless of content, it's reversible. The no-op
-    # last step exists so the plan states the config promise explicitly.
+    # aside — backed up regardless of content, it's reversible. The backup
+    # goes beside the plugin path, not into it: install cleans every
+    # undeclared dir there (D32), so a backup inside would be deleted by the
+    # first prefix + I. The no-op last step exists so the plan states the
+    # config promise explicitly.
     def drop_in_plan(tpm_dir)
       steps = []
       if File.exist?(tpm_dir) || File.symlink?(tpm_dir)
-        backup = "#{tpm_dir}.orig-#{timestamp}"
+        backup = File.join(File.dirname(File.dirname(tpm_dir)), "tpm.orig-#{timestamp}")
         steps << ["rename #{tpm_dir} -> #{backup} (backup, kept)",
                   -> { File.rename(tpm_dir, backup) }]
       end
