@@ -41,10 +41,10 @@ median — re-run it rather than trusting this table. These numbers were
 taken before plugins became plain clones (an earlier design kept an
 extra copy of each one) and are pending re-measurement.
 
-| Moment                       | tempo   | tpm     | reading                                                                                                  |
-| ---------------------------- | ------- | ------- | -------------------------------------------------------------------------------------------------------- |
-| steady-state reload          | 197 ms  | 205 ms  | effectively a tie at this plugin count — the plugins themselves dominate both (see below)                |
-| reload after a config change | 369 ms  | 195 ms  | **tpm wins this moment**: tempo regenerates its artifact in Ruby, ~170 ms, once per config edit          |
+| Moment                       | tempo   | tpm     | reading                                                                                                                          |
+| ---------------------------- | ------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| steady-state reload          | 197 ms  | 205 ms  | effectively a tie at this plugin count — the plugins themselves dominate both (see below)                                        |
+| reload after a config change | 369 ms  | 195 ms  | **tpm wins this moment**: tempo regenerates its artifact in Ruby, ~170 ms, once per config edit                                  |
 | cold install of 10 plugins   | 1951 ms | 1209 ms | **tpm wins this moment**: tempo spent ~0.7 s more, measured when every install still filed a store copy (pending re-measurement) |
 
 Read the reload row for what it is, not as a speedup: roughly 180 ms of
@@ -291,6 +291,25 @@ git checkout HEAD~1 -- tempo.lock  # or `git restore tempo.lock` if uncommitted
 `"<name>" restored to <sha>`. The plugin stays on its branch, so the next
 `update` pulls normally. No network is needed as long as the old commit is
 still in the plugin's clone — and a normal `git pull` keeps old commits.
+`tempo doctor` says so if the lockfile is not tracked by git.
+
+### Plugins that need files of their own
+
+Some plugins look for your files inside their own directory —
+tmux-resurrect finds restore strategies in its `strategies/` folder, for
+example. tempo leaves untracked files in a plugin's clone alone, but they
+exist only on that machine: a fresh clone anywhere else will not have them.
+To make such a file part of your setup, commit it to a fork on a branch of
+its own and declare that branch:
+
+```tmux
+set -g @plugin 'you/tmux-resurrect#my-strategy'
+```
+
+To pick up upstream changes later, **merge** upstream into that branch and
+push, then `tempo update tmux-resurrect`. Do not rebase it: a rebased branch
+has to be force-pushed, and `update` is a plain `git pull`, which cannot
+fast-forward over a force-push.
 
 ### The lockfile
 
