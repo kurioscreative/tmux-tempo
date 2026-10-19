@@ -120,7 +120,14 @@ module Tempo
       state =
         if File.file?(path)
           begin
-            "OK (#{Lockfile.read(path).size} plugins locked)"
+            ok = "OK (#{Lockfile.read(path).size} plugins locked)"
+            # The undo for a bad update is restoring the previous lock from
+            # version control (D36); untracked, that undo does not exist.
+            if Git.tracked?(path)
+              ok
+            else
+              "#{ok}, not tracked by git — commit it: undoing a bad update means restoring the previous lock"
+            end
           rescue Lockfile::Unparseable => e
             "UNPARSEABLE — install/update/clean refuse until it is fixed (#{e.message})"
           end

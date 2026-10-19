@@ -87,6 +87,13 @@ module Tempo
              out: File::NULL, err: File::NULL)
     end
 
+    # Is this file in some repository's index? False both outside any work
+    # tree and for a file never added — to doctor those are the same gap.
+    def tracked?(path)
+      system(NO_PROMPT, "git", "-C", File.dirname(path), "ls-files", "--error-unmatch", "--",
+             File.basename(path), out: File::NULL, err: File::NULL)
+    end
+
     def fetch(dir)
       system(NO_PROMPT, "git", "-C", dir, "fetch", "--quiet",
              out: File::NULL, err: File::NULL)
