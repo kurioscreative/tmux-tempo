@@ -18,8 +18,9 @@ module Tempo
         status                  declared plugins and their lock state
         doctor                  check requirements, paths and artifact health
 
-      options: --frozen      (install) enforce the lockfile offline;
-                             fails if it is not satisfiable, never writes it
+      options: --frozen      (install) offline only, for hosts that must never
+                             download; fails unless the lock is satisfiable
+                             locally, never writes it. Not the everyday path.
                --yes, -y     (init) skip the confirmation prompt
     TEXT
 

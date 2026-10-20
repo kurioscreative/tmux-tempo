@@ -228,6 +228,12 @@ back on their locked commits, and remove the ones your config no longer
 declares. Pressing `prefix` + `I` after cloning your dotfiles onto a new
 machine reproduces your exact locked set.
 
+That is the whole workflow, and `install` is the only verb in it you run
+routinely: `install` (or `prefix` + `I`) to get what the lock says, `update`
+when you want newer code, and a reverted `tempo.lock` plus `install` to undo.
+There is no second install mode to learn; `--frozen` below exists for one
+unusual kind of host and is not part of the everyday path.
+
 Two consequences worth knowing. A plugin you updated by hand outside tempo
 is moved back to its locked commit; `update` is what moves the lock
 forward. And if your config declares **no** plugins, `install` deliberately
@@ -326,17 +332,38 @@ long as the old commit is still in the plugin's clone, and a normal
 `git pull` keeps old commits. `tempo doctor` says so if the lockfile is not
 tracked by git, because then this undo does not exist.
 
-#### `--frozen`
+#### Checking the lock in CI
 
-`install --frozen` is the `cargo --locked` posture, for CI and for machines
-where a surprise download is not acceptable. It never touches the network
-and never writes `tempo.lock`. Before changing anything it checks that every
-declared plugin is installed, is in the lockfile, and has its locked commit
-already in its local clone. If any of those fails it prints **every**
-offending plugin and exits 1 having changed nothing: no partial enforcement
-of a lock that cannot be satisfied. It also exits 1 when it finds no plugins
-declared at all, because a gate that passes having verified nothing is not
-a gate.
+The question CI should ask is "does the committed lock fully describe this
+config?" Plain `install` answers it: run it on a clean checkout, then fail
+the job if it changed the lock.
+
+```sh
+~/.tmux/plugins/tpm/bin/tempo install
+git diff --exit-code tempo.lock
+```
+
+A declared plugin that was never locked gets a fresh pin on that run, and
+a lock that was edited by hand gets re-serialized, so either shows up as a
+diff. No flag is needed, and this works on a machine that starts with no
+plugins at all.
+
+#### `--frozen` (exceptional)
+
+`install --frozen` is for one kind of host: one that already has its clones
+and must never download anything, such as an air-gapped or change-controlled
+machine. You do not need it otherwise, and it is not a substitute for the
+CI check above: its first complaint is `not installed`, so it cannot run on
+a fresh machine, and once plain `install` has run, any gap in the lock has
+already been filled in.
+
+What it does: never touches the network and never writes `tempo.lock`.
+Before changing anything it checks that every declared plugin is installed,
+is in the lockfile, and has its locked commit already in its local clone.
+If any of those fails it prints **every** offending plugin and exits 1
+having changed nothing: no partial enforcement of a lock that cannot be
+satisfied. It also exits 1 when it finds no plugins declared at all, because
+a check that passes having verified nothing has verified nothing.
 
 ```
 $ bin/tempo install --frozen
@@ -374,8 +401,8 @@ fast-forward over a force-push.
 Installing a tmux plugin means running someone else's code with your
 privileges, and tempo does not sandbox it. Nothing prompts you before an
 install either; [THREAT-MODEL.md](THREAT-MODEL.md) explains why. The
-lockfile is the real defense: it pins exact commits, `install --frozen`
-refuses to move off them, and every change shows up in your dotfiles diff.
+lockfile is the real defense: it pins exact commits, `install` puts every
+plugin back on them, and every change shows up in your dotfiles diff.
 What that does and does not protect against is spelled out in
 THREAT-MODEL.md; to report a vulnerability in tempo itself, see
 [SECURITY.md](SECURITY.md).

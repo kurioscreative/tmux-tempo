@@ -39,7 +39,8 @@ commit rather than detaching HEAD, so a later `tempo update` can still pull;
 if you have edited the plugin's files in a way that conflicts, install
 refuses and reports it instead of discarding your edit. Either way the bytes
 that run are the locked ones.) `install --frozen` does the same offline and
-refuses to fetch anything.
+refuses to fetch anything; it is for hosts that must never download, not
+the everyday path.
 
 What that buys you: an upstream **force-push** — the plugin's author
 rewriting already-published history so the same branch or tag name now
@@ -93,7 +94,7 @@ gates the source, never the code: approving a repository once approves every
 commit ever fetched from it afterwards.
 
 What actually constrains what runs on your machine is the lockfile: it pins
-exact commits, `install --frozen` refuses to move off them, and any change shows
+exact commits, `install` puts every plugin back on them, and any change shows
 up as a diff in your dotfiles. That is the control worth relying on.
 
 ## What tempo will not do
@@ -106,6 +107,5 @@ that would be revisited only if that changes).
 ## What actually helps
 
 Read the `*.tmux` entry scripts of anything you install. Keep the plugin set
-small and boring. Commit `tempo.lock`, and use `install --frozen` wherever a
-surprise download would be unwelcome. Update on purpose, and read the diff
-when you do.
+small and boring. Commit `tempo.lock`, and have CI fail when `install`
+changes it. Update on purpose, and read the diff when you do.

@@ -301,12 +301,15 @@ config path deletes every installed plugin. Explicit `tempo clean` keeps
 tpm's meaning and removes everything, because tpm's clean does and the
 compat suite pins it.
 
-**`install --frozen`** is the CI gate: the **frozen check**
+**`install --frozen`** is the offline variant, for a host that already has
+its clones and must never download; it is not the everyday path, and the CI
+check is plain `install` followed by `git diff --exit-code tempo.lock`
+(README "Checking the lock in CI"). Under the flag the **frozen check**
 (`Commands.frozen_violations`) lists one **violation** per declared plugin
 that is not installed, not in the lockfile, or whose locked commit is not
 present locally; then enforcement runs offline, undeclared dirs are
 cleaned, the artifact is regenerated, and the lock is never written. Exit 1
-on any violation, and also when nothing is declared: a gate that passes
+on any violation, and also when nothing is declared: a check that passes
 having verified nothing is worse than one that fails.
 
 Where each verb sits:
