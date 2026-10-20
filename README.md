@@ -495,13 +495,13 @@ and pushing is a separate explicit step:
    TPM_UNDER_TEST=./tempo ./compat-tests/run.sh
    ```
 
-2. `sh tools/publish-tempo.sh` (in the monorepo) splits, maps author
-   identities to the public handle, verifies the published tree is
-   byte-identical to `tempo/` at HEAD, and lists the commits that would
-   go out.
+2. `sh tools/publish-tempo.sh` (in the monorepo) splits, verifies the
+   published tree is byte-identical to `tempo/` at HEAD, and lists the
+   commits that would go out. If the split would not fast-forward the
+   public branch it says so and counts the published commits a push
+   would replace.
 3. Review that list, then `sh tools/publish-tempo.sh --push`. Re-running
-   on extended history fast-forwards; the push refuses to clobber unseen
-   remote work.
+   on extended history fast-forwards.
 4. Tag releases here (`v1.0.0`, …) on the published commit.
 
 Consequence to respect: because history is published, anything ever
